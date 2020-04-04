@@ -17,3 +17,12 @@ for model in model_list:
 print('-' * 50)
 
 test_features.cal()
+
+
+def test():
+	test_features.cal()
+
+
+if __name__ == '__main__':
+    test_features.cal()
+    test()
