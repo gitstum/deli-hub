@@ -2,12 +2,11 @@ import os
 
 """
 Codes in this file help in a way to import all feature at once.
+Clear this file if you don't want so.
 
 Notice: Direct Use is Required
 These import codes won't work when not in first level of the file.
-Neither in functions nor in "if block" can import be successful.
-
-Clear this file if you don't want to import all features at once.
+Neither in functions nor in "if block" can the import be successful.
 """
 
 # path of features, change to fit different working directory.
