@@ -2,7 +2,7 @@ import multiprocessing as mp
 
 
 def agg_cal(func, *args, process_num):
-
+    """Multi-processing calculator."""
 
     result_list1 = []
     result_list2 = []

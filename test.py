@@ -1,19 +1,19 @@
 import os
 import numpy as np
 import pandas as pd
-from features import *
-
+import features
 
 if __name__ == '__main__':
 
     data_series = np.random.rand(200)
 
-    result = MA.cal(data_series, 20)
+    result = features.EWMA.cal(data_series, 20)
+
     print(result)
 
     print('------')
 
-    r1, r2, r3 = MA.agg_cal((data_series, 20),
+    r1, r2, r3 = features.EWMA.agg_cal((data_series, 20),
                             (data_series, 40),
                             (data_series, 80),
                             )
