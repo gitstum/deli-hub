@@ -17,10 +17,13 @@ model_list = [x.replace('.py', '') for x in os.listdir(path) if x.endswith('.py'
 if '__init__' in model_list:
     model_list.remove('__init__')
 
-# import modules
-print('-' * 50)
+# import all modules in this feature folder
+print('')
+print('-' * 43)
+print('[Batch importing implemented on "features"]', end='\n\n')
 for model in model_list:
     command = 'from features import %s' % model
     exec(command)
     print(command)
-print('-' * 50, '\n')
+print('')
+print('-' * 43, '\n')
