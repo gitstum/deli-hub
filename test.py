@@ -5,17 +5,18 @@ import features
 
 if __name__ == '__main__':
 
-    data_series = np.random.rand(200)
+    df = pd.read_csv('data/bitmex_price_1hour_2020q1.csv')
+    data_series = df.price_end
 
-    result = features.EWMA.cal(data_series, 20)
+    result = features.QT.cal(data_series, 24, 0.05)
 
     print(result)
 
     print('------')
 
-    r1, r2, r3 = features.EWMA.agg_cal((data_series, 20),
-                            (data_series, 40),
-                            (data_series, 80),
+    r1, r2, r3 = features.QT.agg_cal((data_series, 24, 0.05),
+                            (data_series, 48, 0.5),
+                            (data_series, 72, 0.95),
                             )
     print('-' * 40)
     print(r1)
