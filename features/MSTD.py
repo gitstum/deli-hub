@@ -2,21 +2,20 @@ import pandas as pd
 import tools
 
 
-def cal(prices, window, quantile):
-    """"Quantile Sequence in Window
+def cal(prices, window):
+    """Moving Average Calculation for Standard Deviations
 
     :param prices: prices, sequence
     :param window: rolling window, int
-    :param quantile: float, 0 < q < 1
-    :return: quantile values of prices, Series
+    :return: moving average prices, Series
     """
 
     if not isinstance(prices, pd.Series):
-        series = pd.Series(prices)
+        prices = pd.Series(prices)
 
-    quantile_values = prices.rolling(window).quantile(quantile, interpolation='linear')
+    moving_average = prices.rolling(window).std()
 
-    return quantile_values
+    return moving_average
 
 
 def agg_cal(*args, process_num=None):

@@ -2,20 +2,21 @@ import pandas as pd
 import tools
 
 
-def cal(series, param, kind='com'):
-    """Exponential Weighted Moving Average
-    :param series: sequence
-    :param param: parameter of 'kind'
-    :param kind: 'com' (> 0) / 'alpha' (0 < alpha ≤ 1)
+def cal(prices, index_value, kind='com'):
+    """Exponential Weighted Moving Average Calculation for Prices
+
+    :param prices: prices, sequence
+    :param index_value: parameter of 'kind', com / alpha
+    :param kind: number, 'com' (> 0) / 'alpha' (0 < alpha ≤ 1)
     """
 
-    if not isinstance(series, pd.Series):
-        series = pd.Series(series)
+    if not isinstance(prices, pd.Series):
+        series = pd.Series(prices)
 
     if kind == 'alpha':
-        exponential_weighted_moving_average = series.ewm(elpha=param).mean()
+        exponential_weighted_moving_average = prices.ewm(alpha=index_value).mean()
     else:
-        exponential_weighted_moving_average = series.ewm(com=param).mean()
+        exponential_weighted_moving_average = prices.ewm(com=index_value).mean()
 
     return exponential_weighted_moving_average
 

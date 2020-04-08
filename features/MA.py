@@ -2,13 +2,18 @@ import pandas as pd
 import tools
 
 
-def cal(series, window):
-    """Moving Average Calculation"""
+def cal(prices, window):
+    """Moving Average Calculation for Prices
 
-    if not isinstance(series, pd.Series):
-        series = pd.Series(series)
+    :param prices: prices, sequence
+    :param window: rolling window, int
+    :return: moving average prices, Series
+    """
 
-    moving_average = series.rolling(window).mean()
+    if not isinstance(prices, pd.Series):
+        series = pd.Series(prices)
+
+    moving_average = prices.rolling(window).mean()
 
     return moving_average
 
