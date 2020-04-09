@@ -1,6 +1,7 @@
 import pandas as pd
 import tools
 
+# TODO: test it
 
 def cal(prices, window):
     """Moving Average Calculation for Standard Deviations

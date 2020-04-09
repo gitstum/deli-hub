@@ -2,18 +2,23 @@ import pandas as pd
 import tools
 
 
-def cal(prices, window):
-    """Moving Average Calculation for Prices
+def cal(the_series, window):
+    """Moving Average Calculation for the_series
 
-    :param prices: prices, sequence
+    :param the_series: sequence, which can be:
+        price,
+        STDs (within each line, which is counted by smaller units),
+        volumes,
+        order numbers(1, plus/minus, 5, all),
+        etc.
     :param window: rolling window, int
-    :return: moving average prices, Series
+    :return: moving average the_series, Series
     """
 
-    if not isinstance(prices, pd.Series):
-        series = pd.Series(prices)
+    if not isinstance(the_series, pd.Series):
+        series = pd.Series(the_series)
 
-    moving_average = prices.rolling(window).mean()
+    moving_average = the_series.rolling(window).mean()
 
     return moving_average
 

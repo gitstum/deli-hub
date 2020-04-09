@@ -2,19 +2,24 @@ import pandas as pd
 import tools
 
 
-def cal(prices, window, quantile):
+def cal(the_series, window, quantile):
     """"Quantile Sequence in Window
 
-    :param prices: prices, sequence
+    :param the_series: sequence, which can be:
+        price,
+        STDs (within each line, which is counted by smaller units),
+        volumes,
+        order numbers(1, plus/minus, 5, all),
+        etc.
     :param window: rolling window, int
     :param quantile: float, 0 < q < 1
-    :return: quantile values of prices, Series
+    :return: quantile values of the_series, Series
     """
 
-    if not isinstance(prices, pd.Series):
-        series = pd.Series(prices)
+    if not isinstance(the_series, pd.Series):
+        the_series = pd.Series(the_series)
 
-    quantile_values = prices.rolling(window).quantile(quantile, interpolation='linear')
+    quantile_values = the_series.rolling(window).quantile(quantile, interpolation='linear')
 
     return quantile_values
 
