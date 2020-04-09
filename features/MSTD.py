@@ -4,7 +4,7 @@ import tools
 # TODO: test it
 
 def cal(prices, window):
-    """Moving Average Calculation for Standard Deviations
+    """Moving Average Calculation for the_series
 
     :param prices: prices, sequence
     :param window: rolling window, int

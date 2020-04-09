@@ -16,7 +16,7 @@ def cal(the_series, window):
     """
 
     if not isinstance(the_series, pd.Series):
-        series = pd.Series(the_series)
+        the_series = pd.Series(the_series)
 
     moving_average = the_series.rolling(window).mean()
 
