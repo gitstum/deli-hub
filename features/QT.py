@@ -2,8 +2,8 @@ import pandas as pd
 import tools
 
 
-def cal(the_series, window):
-    """Moving Average Calculation for the_series
+def cal(the_series, window, quantile):
+    """"Quantile Sequence in Window
 
     :param the_series: sequence, which can be:
         price,
@@ -12,15 +12,16 @@ def cal(the_series, window):
         order numbers(1, plus/minus, 5, all),
         etc.
     :param window: rolling window, int
-    :return: moving average the_series, Series
+    :param quantile: float, 0 < q < 1
+    :return: quantile values of the_series, Series
     """
 
     if not isinstance(the_series, pd.Series):
         the_series = pd.Series(the_series)
 
-    moving_average = the_series.rolling(window).mean()
+    quantile_values = the_series.rolling(window).quantile(quantile, interpolation='linear')
 
-    return moving_average
+    return quantile_values
 
 
 def agg_cal(*args, process_num=None):

@@ -106,3 +106,8 @@ venv.bak/
 # pycharm
 .idea/
 
+# sync
+_gsdata_/
+
+# my private folder
+private/

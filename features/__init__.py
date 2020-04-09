@@ -19,11 +19,11 @@ if '__init__' in model_list:
 
 # import all modules in this feature folder
 print('')
-print('-' * 43)
-print('[Batch importing implemented on "features"]', end='\n\n')
+print('-' * 41)
+print('[Batch import implementing on "features"]', end='\n\n')
 for model in model_list:
     command = 'from features import %s' % model
-    exec(command)
+    exec(command)  # see? so don't name sys command on files, dangerous.
     print(command)
 print('')
-print('-' * 43, '\n')
+print('-' * 41, '\n')
