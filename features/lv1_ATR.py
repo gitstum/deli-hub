@@ -30,7 +30,7 @@ def cal(df, price_start, price_end, price_max, price_min):
     :param price_end: NAME of df column for ending prices
     :param price_max: NAME of df column for max prices
     :param price_min: NAME of df column for min prices
-    :return: average true range for prices, a python list
+    :return: average true range for prices, a python LIST
     """
 
     arr_prices = np.array([
