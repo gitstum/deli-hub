@@ -5,12 +5,7 @@ import tools
 def cal(the_series, window):
     """Moving Average Calculation for the_series
 
-    :param the_series: sequence, which can be:
-        price,
-        STDs (within each line, which is counted by smaller units),
-        volumes,
-        order numbers(1, plus/minus, 5, all),
-        etc.
+    :param the_series: sequence
     :param window: rolling window, int
     :return: moving average the_series, Series
     """

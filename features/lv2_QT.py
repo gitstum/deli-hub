@@ -5,12 +5,7 @@ import tools
 def cal(the_series, window, quantile):
     """"Quantile Sequence in Window
 
-    :param the_series: sequence, which can be:
-        price,
-        STDs (within each line, which is counted by smaller units),
-        volumes,
-        order numbers(1, plus/minus, 5, all),
-        etc.
+    :param the_series: sequence
     :param window: rolling window, int
     :param quantile: float, 0 < q < 1
     :return: quantile values of the_series, Series

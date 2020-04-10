@@ -3,18 +3,18 @@ import tools
 
 # TODO: test it
 
-def cal(prices, window):
+def cal(the_series, window):
     """Moving Average Calculation for the_series
 
-    :param prices: prices, sequence
+    :param the_series: sequence
     :param window: rolling window, int
-    :return: moving average prices, Series
+    :return: moving average the_series, Series
     """
 
-    if not isinstance(prices, pd.Series):
-        prices = pd.Series(prices)
+    if not isinstance(the_series, pd.Series):
+        the_series = pd.Series(the_series)
 
-    moving_average = prices.rolling(window).std()
+    moving_average = the_series.rolling(window).std()
 
     return moving_average
 

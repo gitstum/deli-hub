@@ -5,12 +5,7 @@ import tools
 def cal(the_series, index_value, kind='com'):
     """Exponential Weighted Moving Average Calculation
 
-    :param the_series: sequence, which can be:
-        price,
-        STDs (within each line, which is counted by smaller units),
-        volumes,
-        order numbers(1, plus/minus, 5, all),
-        etc.
+    :param the_series: sequence
     :param index_value: parameter of 'kind', com / alpha
     :param kind: number, 'com' (> 0) / 'alpha' (0 < alpha ≤ 1)
     """
