@@ -1,7 +1,6 @@
 import pandas as pd
 import tools
 
-# TODO: test it
 
 def cal(the_series, window):
     """Moving Average Calculation for the_series

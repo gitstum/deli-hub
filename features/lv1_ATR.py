@@ -1,8 +1,4 @@
-import pandas as pd
 import numpy as np
-import tools
-
-# TODO: test it
 
 
 def cal_atr(before_end, now_start, now_max, now_min):
@@ -61,10 +57,3 @@ def cal(df, price_start, price_end, price_max, price_min):
 
     return atr_list
 
-
-def agg_cal(*args, process_num=None):
-    """Multi-processing calculator."""
-
-    result = tools.agg_cal(cal, *args, process_num=process_num)
-
-    return result

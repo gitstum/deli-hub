@@ -3,7 +3,7 @@ import tools
 
 
 def cal(the_series, window, quantile):
-    """"Quantile Sequence in Window
+    """"Quantile Sequence within a Rolling Window
 
     :param the_series: sequence
     :param window: rolling window, int
