@@ -1,8 +1,4 @@
-import pandas as pd
 import numpy as np
-import tools
-
-# TODO: test it
 
 
 def cal_atr(before_end, now_start, now_max, now_min):
@@ -26,11 +22,11 @@ def cal(df, price_start, price_end, price_max, price_min):
     """Average True Range, Series Calculator
 
     :param df: pd.DataFrame which includes prices info
-    :param price_start: df column name of starting prices
-    :param price_end: df column name of ending prices
-    :param price_max: df column name of max prices
-    :param price_min: df column name of min prices
-    :return: average true range for prices, a python list
+    :param price_start: NAME of df column for starting prices
+    :param price_end: NAME of df column for ending prices
+    :param price_max: NAME of df column for max prices
+    :param price_min: NAME of df column for min prices
+    :return: average true range for prices, a python LIST
     """
 
     arr_prices = np.array([
@@ -38,13 +34,14 @@ def cal(df, price_start, price_end, price_max, price_min):
         df[price_end],
         df[price_max],
         df[price_min]
-    ])
+    ])  # for np is faster than pd
 
     atr_list = []
     before_end = arr_prices[0, 0]
 
     num = 0
-    while num < arr_prices.shape[1]:
+    max_line = arr_prices.shape[1]
+    while num < max_line:
 
         data = arr_prices[..., num]
         now_start = data[0]
@@ -52,12 +49,7 @@ def cal(df, price_start, price_end, price_max, price_min):
         now_max = data[2]
         now_min = data[3]
 
-        value = max(now_max - now_min,
-                    abs(now_max - before_end),
-                    abs(before_end - now_min)
-                    )
-
-        atr_value = 100 * value / now_start  # atr value of each line
+        atr_value = cal_atr(before_end, now_start, now_max, now_min)  # atr value of each line
         atr_list.append(atr_value)
 
         before_end = now_end
@@ -65,10 +57,3 @@ def cal(df, price_start, price_end, price_max, price_min):
 
     return atr_list
 
-
-def agg_cal(*args, process_num=None):
-    """Multi-processing calculator."""
-
-    result = tools.agg_cal(cal, *args, process_num=process_num)
-
-    return result

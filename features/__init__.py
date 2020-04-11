@@ -14,6 +14,7 @@ path = 'features'
 
 # get module name list
 model_list = [x.replace('.py', '') for x in os.listdir(path) if x.endswith('.py')]
+model_list = sorted(model_list)
 if '__init__' in model_list:
     model_list.remove('__init__')
 
