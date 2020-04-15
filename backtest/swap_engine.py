@@ -8,6 +8,18 @@ import empyrical
 from backtest.constant import Direction
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 def get_score(trading_record, df_price, capital=1000, annual_period=(365*24), save_path=None):
     """Get performance from trading records and prices.
 
@@ -31,6 +43,8 @@ def get_score(trading_record, df_price, capital=1000, annual_period=(365*24), sa
     @return: annual score, python dict
     """
 
+    t0 = time.time()
+
     pd.set_option('mode.chained_assignment', None)  # 关闭 SettingWithCopyWarning 警告
 
     # 1. 生成交易记录df_traded
@@ -44,7 +58,7 @@ def get_score(trading_record, df_price, capital=1000, annual_period=(365*24), sa
     # 2.合成运算所需df
 
     df_price['timestamp'] = pd.to_datetime(df_price.timestamp)
-    # groupby的last()能对应到price_end
+    # 让groupby的last()方法找到对应到price_end：
     df_price['timestamp'] += pd.to_timedelta(1, unit='h') - pd.to_timedelta(1, unit='ns')
 
     start_time = df_traded.timestamp.min() - pd.to_timedelta(1, unit='h')
@@ -66,34 +80,51 @@ def get_score(trading_record, df_price, capital=1000, annual_period=(365*24), sa
     df['re_price'] = 1 / df.price
     df['re_size'] = df.order_value * df.re_price
 
-    # 4. 计算时刻的 均价、持仓
+    # 4. 遍历
 
     re_pos = 0
+    re_pos_old = 0
     re_avg_price = 0
+    re_avg_price_old = 0
+    list_re_pos = []  # 时刻持仓
+    list_re_avg_price = []  # 时刻均价
+    close_profit_list = []  # 时刻平仓获利
 
-    for num in df.index:
-        
-        # 引入参数
-        line = df.loc[num, ]
-        re_direction = line.re_direction
-        price = line.re_price
-        volume = line.order_value  # 注意这里是用order_value
-        
-        # 成熟的算法：
+    arr_temp = np.array([
+        df['re_direction'],
+        df['re_price'],
+        df['order_value']  # 注意这里是用order_value
+        ])
+
+    num = 0
+    while num < arr_temp.shape[1]:
+
+        data = arr_temp[..., num]
+        re_direction = data[0]
+        price = data[1]
+        volume = data[2]
+
+        re_avg_price_old = re_avg_price  # 注意要写在循环开头（右侧更新前）
+        re_pos_old = re_pos
+
+        # 计算均价、持仓 (成熟的算法)
         if re_direction == 1:
             re_pos += abs(volume)
             if re_pos > 0:       
-                if re_pos > volume:              # 当前订单同向影响了均价
+                if re_pos > volume:
+                    # 当前订单同向影响了均价
                     re_avg_price = ((re_pos - abs(volume)) * re_avg_price \
                                     + volume * price) / re_pos
-                else:                               # 当前订单导致仓位发生正负变化(或变为非0)
+                else:
+                    # 当前订单导致仓位发生正负变化(或变为非0)
                     re_avg_price = price    
-            elif re_pos == 0:                   # 当前订单导致仓位归零
+            elif re_pos == 0:
+                # 当前订单导致仓位归零
                 re_avg_price = 0
-            else:                                   # 当前订单给空单减仓，均价未变化
+            else:
+                # 当前订单给空单减仓，均价未变化
                 pass
-
-        if re_direction == -1:
+        elif re_direction == -1:
             re_pos -= abs(volume)
             if re_pos < 0:
                 if abs(re_pos) > abs(volume):
@@ -105,43 +136,6 @@ def get_score(trading_record, df_price, capital=1000, annual_period=(365*24), sa
                 re_avg_price = 0
             else:
                 pass
-
-        df.loc[num, 're_pos'] = re_pos
-        df.loc[num, 're_avg_price'] = re_avg_price
-
-    df['re_avg_price'][df['re_avg_price'] == 0] = np.nan
-
-    # 5. 计算实时资产估值
-
-    df['re_hold_return'] = df['re_pos'] * (df['re_price'] - df['re_avg_price'])
-    df['re_hold_return'].fillna(0, inplace=True)
-    df['holdings_value'] = df['re_hold_return'] * df['price']
-
-    # 6. 计算平仓获利 
-
-    arr_re_pos_old = np.append(np.array([0]), df['re_pos'].values.copy()[:-1])
-    arr_re_avg_price_old = np.append(np.array([np.nan]), df['re_avg_price'].values.copy()[:-1])
-
-    arr_temp = np.array([
-        df['re_price'].values,
-        df['re_avg_price'].values,
-        arr_re_avg_price_old, 
-        df['re_pos'].values,
-        arr_re_pos_old
-        ]).copy()
-
-    close_profit_list = []
-
-    num = 0
-    while num < arr_temp.shape[1]:
-
-        data = arr_temp[..., num]
-
-        price = data[0]
-        re_avg_price = data[1]
-        re_avg_price_old = data[2]
-        re_pos = data[3]
-        re_pos_old = data[4]
 
         # 平仓利润计算
         if re_pos * re_pos_old <= 0:
@@ -162,20 +156,32 @@ def get_score(trading_record, df_price, capital=1000, annual_period=(365*24), sa
                 # 此时是单向加仓
                 close_profit = 0
 
+        list_re_pos.append(re_pos)
+        list_re_avg_price.append(re_avg_price)
         close_profit_list.append(close_profit)
 
         num += 1
 
-    df['re_close'] = np.array(close_profit_list).copy()
+    # 5. 向量化运算赋值
+
+    df['re_pos'] = list_re_pos
+    df['re_avg_price'] = list_re_avg_price
+    df['re_avg_price'][df['re_avg_price'] == 0] = np.nan
+
+    df['re_hold_return'] = df['re_pos'] * (df['re_price'] - df['re_avg_price'])
+    df['re_hold_return'].fillna(0, inplace=True)
+    df['holdings_value'] = df['re_hold_return'] * df['price']
+
+    df['re_close'] = close_profit_list
     df['close_accumulate'] = df['re_close'].cumsum()
 
     df['re_fee'] = df['re_size'] * df['fee_rate']
     df['re_fee'].fillna(0, inplace=True)
     df['re_profit'] = df['re_close'] + df['re_fee']
 
-    df['fee'] = df['re_fee'] * df['price']    # 这里对上面fee的单位做了转换。假设套保。
+    df['fee'] = df['re_fee'] * df['price']  # 这里对上面fee的单位做了转换。假设套保。
     df['fee_acc'] = df['fee'].cumsum()
-    df['close_profit'] = df['re_close'] * df['price']  # 这里的假设是：对每一笔交易的平仓后利润进行套保
+    df['close_profit'] = df['re_close'] * df['price']  # 这里假设对每一笔交易的平仓后利润进行套保
     df['profit_acc'] = df['close_profit'].cumsum()
 
     df['re_returns'] = df['re_close'] + df['re_fee'] + df['re_hold_return']
@@ -184,11 +190,7 @@ def get_score(trading_record, df_price, capital=1000, annual_period=(365*24), sa
     df['re_returns_acc'] = df['re_close'].cumsum() + df['re_fee'].cumsum() + df['re_hold_return']
     df['returns_acc'] = df['profit_acc'] + df['fee_acc'] + df['holdings_value']
 
-    # 7. save
-    if save_path:
-        df.to_csv('%s' % save_path, index=False)
-
-    # 8. 结果评估
+    # 6. 结果评估
 
     if df['returns_acc'].min() < - capital:
         return bad_score()  # lost all.
@@ -224,6 +226,10 @@ def get_score(trading_record, df_price, capital=1000, annual_period=(365*24), sa
                   '浮盈时间比(如持仓)': profit_time_ratio
                   }
 
+    # 7. save
+    if save_path:
+        df.to_csv('%s' % save_path, index=False)
+
     pd.set_option('mode.chained_assignment', 'warn')  # 重新打开警告
 
     return dict_score
@@ -252,10 +258,8 @@ def bad_score():
 
 if __name__ == '__main__':
 
-    t0 = time.time()
-
     # 准备虚拟的交易记录字典
-    df1 = pd.read_csv('../data/trading_record_example.csv')
+    df1 = pd.read_csv('../data/trading_record.csv')
     trading_record = {
         'timestamp': list(df1.timestamp.values),
         'side': list(df1.side.values),
@@ -272,11 +276,15 @@ if __name__ == '__main__':
     df_price.rename({'price_end': 'price'}, axis=1, inplace=True)
 
     # TEST IT
+
+    t0 = time.time()
+
     score = get_score(trading_record,
                       df_price,
                       capital=1000,
                       annual_period=(365 * 24),
-                      save_path='trading_record_test.csv')
+                      save_path='trading_record_test(after).csv'
+                      )
     print(score)
 
     print('time: %s' % (time.time() - t0))
