@@ -8,18 +8,6 @@ import empyrical
 from backtest.constant import Direction
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 def get_score(trading_record, df_price, capital=1000, annual_period=(365*24), save_path=None):
     """Get performance from trading records and prices.
 
@@ -42,8 +30,6 @@ def get_score(trading_record, df_price, capital=1000, annual_period=(365*24), sa
     @param save_path: to store results on disk
     @return: annual score, python dict
     """
-
-    t0 = time.time()
 
     pd.set_option('mode.chained_assignment', None)  # 关闭 SettingWithCopyWarning 警告
 
