@@ -1,5 +1,5 @@
 import pandas as pd
-import tools
+from tools import Tools
 
 
 def cal(the_series, window):
@@ -21,6 +21,6 @@ def cal(the_series, window):
 def agg_cal(*args, process_num=None):
     """Multi-processing calculator."""
 
-    result = tools.agg_cal(cal, *args, process_num=process_num)
+    result = Tools.agg_cal(cal, *args, process_num=process_num)
 
     return result

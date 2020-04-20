@@ -1,7 +1,7 @@
 import time
 import multiprocessing as mp
 
-import tools
+from tools import Tools
 
 
 def cal(arg1=888, arg2=999):
@@ -18,7 +18,7 @@ def cal(arg1=888, arg2=999):
 def agg_cal(*args, process_num=None):
     """Multi-processing calculator."""
 
-    result = tools.agg_cal(cal, *args, process_num=process_num)
+    result = Tools.agg_cal(cal, *args, process_num=process_num)
 
     return result
 
