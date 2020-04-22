@@ -51,11 +51,12 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def short_judge_kbar(price_start, price_end, price_max, price_min,
-                         order_price=None, ticks=None, first_time=True):
-        """To judge if/how an order were traded.
+    def trade_kbar(price_start, price_end, price_max, price_min,
+                   order_side=None, order_price=None, ticks=None, first_time=True):
+        """To judge if/how an order were traded, kbar method.
 
         @param price_*: price, number.
+        @param order_side:
         @param order_price: None for MARKET order.
         @param ticks: None for no data(but better to have, to estimate slippage)
         @param first_time: for LIMIT order slippage and fee_rate estimation
@@ -65,26 +66,31 @@ class Tools(object):
             -- not traded: (np.nan, np.nan)
             -- traded: (trade_price, fee_rate)
 
-
         NOTE
             - 在调用本函数之前，另行判断是否overload --无法进入成交判断，因为没有能成功提交订单到交易所
-            - new LIMIT order Theory:
-                1. 凡是高于 price_max 的订单一律返回 nan，因为不会成交
-                2. 凡是低于 price_min 的 order_price，一律将滑点边界设置为 price_min，再进行后续判断
-                3. 成交的概率，随着 order_price 的降低而上升，当 order_price < price_end ，则必然成交
-                4. 手续费为 FeeType.MAKER 的概率随着 order_price 的降低而降低，当 < price_start ，则必然为 FeeType.TAKER
-                5. 当 order_price 拉升（正向的滑点），手续费必然为TAKER，有两种情况：
-                    - order_price < price_start
-                    - order_price > price_start, overload
-                6. 当 order_price 被采纳：
-                    - 如价格等于开盘价格，有一半以上的概率是TAKER
-                    - 如价格高于开盘价，手续费必然是MAKER
-                7. 对 LIMIT order， ticks往有利的方向影响执行价格，从而间接影响手续费类别
-                8. 
-
         """
 
+        if order_side == Direction.SHORT:
+            trade_price, fee_rate = Tools.short_judge_kbar(price_start, price_end, price_max, price_min,
+                                                           order_price=order_price, ticks=ticks, first_time=first_time)
+        elif order_side == Direction.LONG:
+            trade_price, fee_rate = Tools.long_judge_kbar(price_start, price_end, price_max, price_min,
+                                                          order_price=order_price, ticks=ticks, first_time=first_time)
+        else:
+            trade_price, fee_rate = np.nan, np.nan
+
+        return trade_price, fee_rate
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def short_judge_kbar(price_start, price_end, price_max, price_min,
+                         order_price=None, ticks=None, first_time=True):
+        """Short order judgement, kbar method."""
+
         bar_direction = price_end - price_start
+        bar_range = price_max - price_min
+
         if np.isnan(bar_direction):
             return np.nan, np.nan  # no trades happened.
 
@@ -93,88 +99,169 @@ class Tools(object):
         if order_price is None:
 
             slippage = Tools.get_slippage(price_start, price_min, ticks, how='bad')
-            if slippage <= MIN_DISTANCE and np.random.random() < 0.5:
+            if slippage < MIN_DISTANCE and np.random.random() < 0.5:
                 slippage += MIN_DISTANCE  # for price_start can be bid_price_1 or ask_price_1, not sure.
+
             trade_price = price_start - slippage
+
             return trade_price, OrderFee.TAKER.value
 
-        # 2. LIMIT order  --there are totally 10+1 possible path out of 5 parameter(32 combination %path)
+        # 2. LIMIT order  --there are totally 10+1 possible path out of 5 parameter(32 %path) for new order
 
-        # %path 24, 32
+        # %path 16, 32
         if order_price >= price_max:
             return np.nan, np.nan  # order_price set too high, can't be traded at this bar
 
         if not first_time:
             return order_price, OrderFee.MAKER.value  # old LIMIT order (already there)
 
-        lowest_possible_trade_price = max(order_price, price_min)
-        trade_price = lowest_possible_trade_price
-        maker_distance = trade_price - price_start  # order can be a MAKER if distance is large enough.
+        # params
+        maker_distance = order_price - price_start  # order can be a MAKER if distance is large enough.
+        lowest_possible_trade_price = max(order_price, price_min)  # 可达(price_max+MIN_DISTANCE)，但会干扰比较计算的正负
 
-        if trade_price < price_end:
-            # %path 3, 4, 11, 12, 16  --must get traded zone
+        if order_price < price_end:
+            # %path 1, 2, 18, 19, 22  --must get traded zone
             fee_rate = OrderFee.TAKER.value
 
             slippage = Tools.get_slippage(price_end, lowest_possible_trade_price, ticks, how='good')
             if slippage > 0:
                 # slippage > 0 indicates an intense moment. as now the bar ends high, there is a chance to trade higher
                 # than lowest_possible_trade_price.
-                if np.random.random() < 0.2:
-                    trade_price = lowest_possible_trade_price + slippage
+                if bar_direction > 0:
+                    p = 0.4  # short order against the trend
+                else:
+                    p = 0.2
+                if np.random.random() < p:
+                    lowest_possible_trade_price += slippage
 
-            # %path 16
+            # %path 22  --higher than price_start, a chance to be MAKER.
             if maker_distance > 0:
                 slippage_opp = Tools.get_slippage(price_end, price_start, ticks, how='bad')
                 # not a standard usage for slippage  --assume a conservative opponent order slippage, then compare.
                 if slippage_opp < maker_distance:
                     fee_rate = OrderFee.MAKER.value
 
-            return trade_price, fee_rate
+            return lowest_possible_trade_price, fee_rate
 
         else:
+            # %path 0, 4
+            if maker_distance == 0:
+                # order_price == price_start  -- %path 0 (this is not shown in the 32 possibility table)
+                fee_rate = Tools.random_fee_rate(0.5)
+                return lowest_possible_trade_price, fee_rate
 
-            # %path 0, 20
-            if maker_distance < 0:
-
+            elif maker_distance < 0:
+                # %path 4
                 fee_rate = OrderFee.TAKER.value
                 slippage_market = Tools.get_slippage(price_start, price_min, ticks, how='bad')
-                market_price = price_start - slippage_market  # assume a market order
+                market_price = price_start - slippage_market  # assume a market short order
 
-                if trade_price <= market_price:
+                if lowest_possible_trade_price <= market_price:
                     return market_price, fee_rate
                 else:
-                    up_pin_percentage = (price_max - price_start) / (price_max - price_min)
-                    # in this situation, real up part is (price_max-trade_price), but a bit too radical
+                    up_pin_percentage = (price_max - price_start) / bar_range
+                    # in this situation, real up part is (price_max-lowest_possible_trade_price), but a bit too radical
                     if np.random.random() < up_pin_percentage:
                         return price_start, fee_rate  # if many trades happens upper, then still a big chance get traded
                     else:
                         return np.nan, np.nan
 
-            elif maker_distance == 0:
-                # order_price == price_start  -- %path 0 (this is not shown in the 32 possibility table)
-                fee_rate = Tools.random_fee_rate(0.5)
-                return trade_price, fee_rate
-
-            # %path 23, 31
-            slippage = Tools.get_slippage(price_max, trade_price, ticks, how='good')
-            if slippage > 0:
-
-                if bar_direction <= 0:
-                    up_pin_percentage = (price_max - trade_price) / (price_max - price_min)
-                else:
-                    up_pin_percentage = (price_max - price_end) / (price_max - price_min)  # price_end for higher chance
-
-                if np.random.random() < up_pin_percentage:
-                    fee_rate = OrderFee.TAKER.value
-                    trade_price += slippage
-                    return trade_price, fee_rate
-                else:
-                    return np.nan, np.nan
+            # %path 8, 24
+            slippage_edge = Tools.get_slippage(price_max, price_start, ticks, how='good')
+            trade_edge = price_max - slippage_edge
+            if lowest_possible_trade_price < trade_edge:
+                return lowest_possible_trade_price, OrderFee.MAKER.value
             else:
-                fee_rate = OrderFee.MAKER.value
-                return trade_price, fee_rate
+                return np.nan, np.nan
 
 
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def long_judge_kbar(price_start, price_end, price_max, price_min,
+                        order_price=None, ticks=None, first_time=True):
+        """Long order judgement, kbar method. Check short_judge_kbar() for more notes."""
+
+        bar_direction = price_end - price_start
+        bar_range = price_max - price_min
+
+        if np.isnan(bar_direction):
+            return np.nan, np.nan
+
+        # 1. MARKET / STOP / LIQUIDATION order
+
+        if order_price is None:
+
+            slippage = Tools.get_slippage(price_max, price_start, ticks, how='bad')
+            if slippage < MIN_DISTANCE and np.random.random() < 0.5:
+                slippage += MIN_DISTANCE
+
+            trade_price = price_start + slippage
+
+            return trade_price, OrderFee.TAKER.value
+
+        # 2. LIMIT order  --there are totally 10+1 possible path out of 5 parameter(32 %path) for new order
+
+        # %path 1, 17
+        if order_price <= price_min:
+            return np.nan, np.nan
+
+        if not first_time:
+            return order_price, OrderFee.MAKER.value
+
+        # params
+        maker_distance = price_start - order_price
+        highest_possible_trade_price = min(order_price, price_max)
+
+        if order_price > price_end:
+            # %path 4, 8, 16, 24, 32  --must get traded zone
+            fee_rate = OrderFee.TAKER.value
+
+            slippage = Tools.get_slippage(highest_possible_trade_price, price_end, ticks, how='good')
+            if slippage > 0:
+                if bar_direction < 0:
+                    p = 0.4
+                else:
+                    p = 0.2
+                if np.random.random() < p:
+                    highest_possible_trade_price -= slippage
+
+            # %path 4  --lower than price_start, a chance to be MAKER
+            if maker_distance > 0:
+                slippage_opp = Tools.get_slippage(price_start, price_end, ticks, how='bad')
+                if slippage_opp < maker_distance:
+                    fee_rate = OrderFee.MAKER.value
+
+            return highest_possible_trade_price, fee_rate
+
+        else:
+            # %path 0, 22
+            if maker_distance == 0:
+                fee_rate = Tools.random_fee_rate(0.5)
+                return highest_possible_trade_price, fee_rate
+
+            elif maker_distance < 0:
+                fee_rate = OrderFee.TAKER.value
+                slippage_market = Tools.get_slippage(price_max, price_start, ticks, how='bad')
+                market_price = price_start + slippage_market
+
+                if highest_possible_trade_price >= market_price:
+                    return market_price, fee_rate
+                else:
+                    down_pin_percentage = (price_start - price_min) / bar_range
+                    if np.random.random() < down_pin_percentage:
+                        return price_start, fee_rate
+                    else:
+                        return np.nan, np.nan
+
+            # %path 2, 18
+            slippage_edge = Tools.get_slippage(price_start, price_min, ticks, how='bad')
+            trade_edge = price_min + slippage_edge
+            if highest_possible_trade_price > trade_edge:
+                return highest_possible_trade_price, OrderFee.MAKER.value
+            else:
+                return np.nan, np.nan
 
 
     # -----------------------------------------------------------------------------------------------------------------
@@ -213,7 +300,7 @@ class Tools(object):
                 if ticks < slippage_tick_max:
                     slippage = 0
                 else:
-                    slippage = Tools.fit_to_minimal(np.random.random() * slip_range)
+                    slippage = Tools.fit_to_minimal(np.random.random()*np.random.random() * slip_range)
 
         else:
 
