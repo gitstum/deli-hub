@@ -51,6 +51,101 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def arr_orders_prepare(df_book):
+        """"""
+
+        # close SettingWithCopyWarning
+        pd.set_option('mode.chained_assignment', None)
+
+        df_book['timestamp'] = pd.to_numeric(pd.to_datetime(df_book.timestamp))  # int timestamp!
+
+        pos_should_old = np.append(np.array([POS_START]), df_book['pos_should'])
+        df_book['pos_should_old'] = pos_should_old[:-1]
+        df_book['trade_sig'] = df_book.pos_should - df_book.pos_should_old
+
+        df_book['order_side'] = Direction.NONE
+        df_book['order_side'][df_book.trade_sig > 0] = 1  # Direction.LONG
+        df_book['order_side'][df_book.trade_sig < 0] = 0  # Direction.SHORT
+
+        df_book['order_value'] = df_book.trade_sig.abs()
+
+        df_book['pos_regress'] = 0  # False
+        df_book['pos_regress'][df_book.pos_should.abs() < df_book.pos_should_old.abs()] = 1  # True
+
+        df_book = df_book[df_book.order_side != Direction.NONE]
+        df_book.reset_index(drop=True, inplace=True)
+
+        # 设置限价委托的价格  --这里用pos_regress区分轻重缓急
+        df_book['order_price'] = 0  # 0 for MARKET order
+        df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] = \
+            df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] - LIMIT_DISTANCE
+        df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] = \
+            df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] - LIMIT_DISTANCE
+
+        arr_orders = np.array([
+            df_book.timestamp.values,
+            df_book.order_side.values,
+            df_book.order_price.values
+        ], )
+
+        # reopen SettingWithCopyWarning
+        pd.set_option('mode.chained_assignment', 'warn')
+
+        return arr_orders
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def arr_price_prepare(df_price):
+        """Convert kbar pd.DataFrame to np.Array.
+
+        @param df_price: kbar DataFrame, includes:
+            timestamp  -- start time of the period. NOTE this is different than timestamp in df_book!
+            price_start
+            price_end
+            price_max
+            price_end
+            ticks  --how many L1 changes the period has.
+        @return: np.Array: [line_data, line_index], NOTE that timestamp is converted to int.
+        """
+
+        df_price['timestamp'] = pd.to_numeric(pd.to_datetime(df_price.timestamp))    # int timestamp!
+
+        arr_price = np.array([
+            df_price.timestamp.values,
+            df_price.price_start.values,
+            df_price.price_end.values,
+            df_price.price_max.values,
+            df_price.price_min.values,
+            df_price.ticks.values
+        ])
+
+        return arr_price
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_bar_data(arr_price, num):
+        """To get No.num kbar data in arr_price
+
+        @param arr_price: fromt arr_price_prepare()
+        @param num: index
+        @return: each kbar data
+        """
+        line = arr_price[..., num]
+
+        timestamp = line[0]
+        price_start = line[1]
+        price_end = line[2]
+        price_max = line[3]
+        price_min = line[4]
+        ticks = line[5]
+
+        return timestamp, price_start, price_end, price_max, price_min, ticks
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def trade_kbar(price_start, price_end, price_max, price_min,
                    order_side=None, order_price=None, ticks=None, first_time=True):
         """To judge if/how an order were traded, kbar method.
@@ -94,9 +189,9 @@ class Tools(object):
         if np.isnan(bar_direction):
             return np.nan, np.nan  # no trades happened.
 
-        # 1. MARKET / STOP / LIQUIDATION order
+        # 1. MARKET / STOP / LIQUIDATION order  --first_time=True
 
-        if order_price is None:
+        if not order_price:
 
             slippage = Tools.get_slippage(price_start, price_min, ticks, how='bad')
             if slippage < MIN_DISTANCE and np.random.random() < 0.5:
@@ -191,7 +286,7 @@ class Tools(object):
 
         # 1. MARKET / STOP / LIQUIDATION order
 
-        if order_price is None:
+        if not order_price:
 
             slippage = Tools.get_slippage(price_max, price_start, ticks, how='bad')
             if slippage < MIN_DISTANCE and np.random.random() < 0.5:
