@@ -57,7 +57,7 @@ class Tools(object):
         # close SettingWithCopyWarning
         pd.set_option('mode.chained_assignment', None)
 
-        df_book['timestamp'] = pd.to_numeric(pd.to_datetime(df_book.timestamp))  # int timestamp!
+        df_book['timestamp'] = pd.to_datetime(df_book.timestamp)
 
         pos_should_old = np.append(np.array([POS_START]), df_book['pos_should'])
         df_book['pos_should_old'] = pos_should_old[:-1]
@@ -83,9 +83,10 @@ class Tools(object):
             df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] - LIMIT_DISTANCE
 
         arr_orders = np.array([
-            df_book.timestamp.values,
+            df_book.timestamp.values,  # NOTE: auto change to int timestamp!
             df_book.order_side.values,
-            df_book.order_price.values
+            df_book.order_price.values,
+            df_book.order_value.values
         ], )
 
         # reopen SettingWithCopyWarning
@@ -109,10 +110,10 @@ class Tools(object):
         @return: np.Array: [line_data, line_index], NOTE that timestamp is converted to int.
         """
 
-        df_price['timestamp'] = pd.to_numeric(pd.to_datetime(df_price.timestamp))    # int timestamp!
+        df_price['timestamp'] = pd.to_datetime(df_price.timestamp)
 
         arr_price = np.array([
-            df_price.timestamp.values,
+            df_price.timestamp.values,  # NOTE: auto change to int timestamp!
             df_price.price_start.values,
             df_price.price_end.values,
             df_price.price_max.values,
@@ -449,9 +450,12 @@ class Tools(object):
         @param trading_record: Dict of traded result(and no other like cancelled), must include these keys:
             timestamp  --of the event
             side  --order direction
-            price  --object price in fiat
+            price  --traded price in fiat
             order_value  --fiat value, volume in fiat, to detect if traded in this line.
             fee_rate  --in float
+
+            new:
+            order_price
 
         @param df_kbar: 1 minute / 1 hour close price df, includes:
             timestamp  --period time start
