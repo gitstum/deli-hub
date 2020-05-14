@@ -15,20 +15,33 @@ from backtest.constant import *
 from tools import Tools
 
 
+class Form(Tools):
+    """From strategy detail to df_book
+    1. Create the big strategy demand DataFrame. Index: timestamp, columns:
+        - strategy_IDs
+        - each strategy demands: pos_should, price(None for marketprice)
+    2. Merge all strategy demands into one df_book.
+    """
+
+
+
+
 class Judge(Tools):
-    """Judgement
+    """Judgement: from df_book to strategy score.
     1. mock trading
     2. portfolio
     2. performance evaluation
     """
 
-    def __init__(self, name, df_book, df_price, judge_type='kbar'):
+    def __init__(self, name, df_book, df_price,
+                 judge_type='kbar', save_file=None,
+                 exchange='BITMEX', symbol='XBTUSD'):
         """Create judgement object for a strategy.
 
         @param df_book: booking DataFrame which must include:
             timestamp  --when the order is submitted. NOTE it's NOT the start(tag) timestamp of the period!
-            exchange
-            symbol
+            # exchange
+            # symbol
             price  --decision tag price(at end of period)
             pos_should  --what pos should be hold (shortly) after the timestamp
         @param df_price: price info to judging if order in df_book can be filled(traded), should be longer than df_book.
@@ -43,6 +56,7 @@ class Judge(Tools):
             'tick'  -- to specify df_price a tick price DataFrame, from:
                 tools.get_tick_comp_price()
                 tools.tick_comp_price()
+        @param save_file: path & file name to save trading result.
 
         NOTE:
             'kbar' judgement Assumptions:
@@ -59,13 +73,14 @@ class Judge(Tools):
 
         """
 
-        print('%s | %s | Creating judgement instance: %s.' % (self.str_time(), self.name, self.name))
+        print('%s | %s | Creating judgement instance: %s.' % (self.str_time(), name, name))
 
         self.name = name
         self.df_book = df_book
         self.df_price = df_price
         self.judge_type = judge_type
-        self.symbol = df_book.loc[0, 'exchange'] + '.' + df_book.loc[0, 'symbol']
+        self.save_file = save_file
+        self.symbol = exchange + '.' + symbol
 
         print('%s | %s | Preparing data.' % (self.str_time(), self.name))
 
@@ -110,7 +125,7 @@ class Judge(Tools):
 
         print('%s | %s | Starting evaluation.' % (self.str_time(), self.name))
         self.trading_record.pop('order_ID')  # TODO get_score() overridden
-        result = self.get_score(self.trading_record, df_price, annual_period=365*24*60)
+        result = self.get_score(self.trading_record, self.df_price, annual_period=365*24*60, save_file=self.save_file)
 
         print('%s | %s | Judgement instance ended for %s.' % (self.str_time(), self.name, self.name))
 
@@ -122,6 +137,8 @@ class Judge(Tools):
         """Get the orders traded if possible."""
 
         t0 = time.time()
+        self.bar_line = self.get_next_bar()
+        bar_timestamp = self.bar_line[0]  # to make if faster, only timestamp, others latter. same for below.
 
         while True:
 
@@ -135,15 +152,13 @@ class Judge(Tools):
                         self.bar_line = self.get_next_bar()
                         self.trade_old()
                     else:
+                        print('%s | %s | NOTE: No more bars while order_book is not empty.' % (self.str_time(), self.name))
                         break  # no more bars
                 break  # no old orders not traded when no more new orders/ no more bars
 
             # get new bar data
             if not self.next_bar():
                 break  # no next bar data. this is not suppose to happen as df_price should be longer than df_book
-
-            self.bar_line = self.get_next_bar()
-            bar_timestamp = self.bar_line[0]  # to make if faster, only timestamp, others latter.
 
             while bar_timestamp <= order_timestamp:
                 # dealing with old limit orders.
@@ -201,11 +216,12 @@ class Judge(Tools):
         price_min = self.bar_line[4]
         ticks = self.bar_line[5]
 
-        for order_ID_old in self.order_book:
+        order_book = self.order_book.copy()  # important.
+        for order_ID_old in order_book:
             # order_timestamp = self.df_book[order_ID]['order_timestamp']
-            order_side_old = self.df_book[order_ID_old]['order_side']
-            order_price_old = self.df_book[order_ID_old]['order_price']
-            order_value_old = self.df_book[order_ID_old]['order_value']
+            order_side_old = self.order_book[order_ID_old]['order_side']
+            order_price_old = self.order_book[order_ID_old]['order_price']
+            order_value_old = self.order_book[order_ID_old]['order_value']
 
             trade_price, fee_rate = self.trade_kbar(price_start, price_end, price_max, price_min,
                                                     ticks=ticks,

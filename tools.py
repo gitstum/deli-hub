@@ -17,18 +17,18 @@ class Tools(object):
 
     @staticmethod
     def agg_cal(func, *args, process_num=None):
-        """Multi-processing framework for functions.
+        """Multi-processing framework for functionX with agg_cal:
 
-        How to call:
-            result1, result2 = func.agg_cal((param1,), (param2,))
-            result1, result2 = Tools.agg_cal(func,
-                                             (param1, ), (param2),
+        To call:
+            result1, result2 = functionX.agg_cal((param1,), (param2,))
+            result1, result2 = Tools.agg_cal(functionX,
+                                             (param1,), (param2,),
                                              process_num=4
                                             )
         """
 
-        result_list1 = []
-        result_list2 = []
+        result_tags = []
+        results = []
 
         if not process_num:
             pool = mp.Pool()
@@ -36,22 +36,22 @@ class Tools(object):
             pool = mp.Pool(processes=process_num)
 
         for i in args:
-            result1 = pool.apply_async(func, i)
-            result_list1.append(result1)
+            tag = pool.apply_async(func, i)  # i must be tuple
+            result_tags.append(tag)
 
         pool.close()
         pool.join()
 
-        for r in result_list1:
-            result2 = r.get()
-            result_list2.append(result2)
+        for tag in result_tags:
+            result = tag.get()
+            results.append(result)
 
-        return result_list2
+        return results
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def arr_orders_prepare(df_book):
+    def arr_orders_prepare(df_book, adjust=None):
         """"""
 
         # close SettingWithCopyWarning
@@ -64,8 +64,8 @@ class Tools(object):
         df_book['trade_sig'] = df_book.pos_should - df_book.pos_should_old
 
         df_book['order_side'] = Direction.NONE
-        df_book['order_side'][df_book.trade_sig > 0] = 1  # Direction.LONG
-        df_book['order_side'][df_book.trade_sig < 0] = 0  # Direction.SHORT
+        df_book['order_side'][df_book.trade_sig > 0] = 1  # or Direction.LONG
+        df_book['order_side'][df_book.trade_sig < 0] = -1  # or Direction.SHORT
 
         df_book['order_value'] = df_book.trade_sig.abs()
 
@@ -75,12 +75,16 @@ class Tools(object):
         df_book = df_book[df_book.order_side != Direction.NONE]
         df_book.reset_index(drop=True, inplace=True)
 
-        # 设置限价委托的价格  --这里用pos_regress区分轻重缓急
-        df_book['order_price'] = 0  # 0 for MARKET order
-        df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] = \
-            df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] - LIMIT_DISTANCE
-        df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] = \
-            df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] - LIMIT_DISTANCE
+        # 设置限价委托的价格  
+        if adjust is None:
+            pass
+        elif adjust == 'market':
+            df_book['order_price'] = 0  # 0 for MARKET order
+        elif adjust == 'auto':  # 'auto' --用pos_regress区分轻重缓急 
+            df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] = \
+                df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] - LIMIT_DISTANCE
+            df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] = \
+                df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] - LIMIT_DISTANCE
 
         arr_orders = np.array([
             df_book.timestamp.values,  # NOTE: auto change to int timestamp!
@@ -166,10 +170,10 @@ class Tools(object):
             - 在调用本函数之前，另行判断是否overload --无法进入成交判断，因为没有能成功提交订单到交易所
         """
 
-        if order_side == Direction.SHORT:
+        if order_side == 0 or order_side == Direction.SHORT:
             trade_price, fee_rate = Tools.short_judge_kbar(price_start, price_end, price_max, price_min,
                                                            order_price=order_price, ticks=ticks, first_time=first_time)
-        elif order_side == Direction.LONG:
+        elif order_side == 1 or order_side == Direction.LONG:
             trade_price, fee_rate = Tools.long_judge_kbar(price_start, price_end, price_max, price_min,
                                                           order_price=order_price, ticks=ticks, first_time=first_time)
         else:
@@ -413,10 +417,10 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def fit_to_minimal(number, min_range=MIN_DISTANCE):
+    def fit_to_minimal(float_price, min_range=MIN_DISTANCE):
         """To fit a price / price_delta to exchange's minimal price distance."""
 
-        return round(number * (1 / min_range)) / (1 / min_range)
+        return round(float_price * (1 / min_range)) / (1 / min_range)
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -444,7 +448,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def get_score(trading_record, df_kbar, capital=CAPITAL, annual_period=ANNUAL_PERIOD, save_path=None):
+    def get_score(trading_record, df_kbar, capital=CAPITAL, annual_period=ANNUAL_PERIOD, save_file=None):
         """Get performance from trading records and prices.
 
         @param trading_record: Dict of traded result(and no other like cancelled), must include these keys:
@@ -467,8 +471,9 @@ class Tools(object):
             day: 365
             week:  52
             month: 12
-        @param save_path: to store results on disk.  --NOTE: file's max time period is equal to df_kbar!
+        @param save_file: to store results on disk.  --NOTE: file's max time period is equal to df_kbar!
         @return: annual score, python dict
+
         """
 
         pd.set_option('mode.chained_assignment', None)  # 关闭 SettingWithCopyWarning 警告
@@ -502,8 +507,8 @@ class Tools(object):
         # 3. 更换计算单位
 
         df['re_direction'] = np.nan
-        df['re_direction'][df.side == Direction.SHORT] = 1
-        df['re_direction'][df.side == Direction.LONG] = -1
+        df['re_direction'][(df.side == Direction.SHORT) | (df.side == -1)] = 1
+        df['re_direction'][(df.side == Direction.LONG) | (df.side == 1)] = -1
         df['re_price'] = 1 / df.price
         df['re_size'] = df.order_value * df.re_price
 
@@ -590,6 +595,7 @@ class Tools(object):
             num += 1
 
         # 5. 向量化运算赋值
+        # TODO 分别考虑有成交的情况和没有成交的情况
 
         df['re_pos'] = list_re_pos
         df['re_avg_price'] = list_re_avg_price
@@ -656,8 +662,8 @@ class Tools(object):
                       }
 
         # 7. save
-        if save_path:
-            df.to_csv('%s' % save_path, index=False)
+        if save_file:
+            df.to_csv('%s' % save_file, index=False)
 
         pd.set_option('mode.chained_assignment', 'warn')  # 重新打开警告
 
@@ -1030,7 +1036,7 @@ if __name__ == '__main__':
                             df_price,
                             capital=1000,
                             annual_period=(365 * 24),
-                            # save_path='trading_record_test(after).csv'
+                            # save_file='trading_record_test(after).csv'
                             )
     print(score)
 

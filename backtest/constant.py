@@ -8,9 +8,9 @@ import numpy as np
 class Direction(Enum):
     """Order Direction"""
 
-    LONG = 'long'
-    SHORT = 'short'
-    NONE = 'none'
+    LONG = 1  # 'long'
+    SHORT = -1  # 'short'
+    NONE = 0  # 'none'
     UP = 'up'
     DOWN = 'down'
 
