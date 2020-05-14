@@ -11,8 +11,8 @@ class Direction(Enum):
     LONG = 1  # 'long'
     SHORT = -1  # 'short'
     NONE = 0  # 'none'
-    UP = 'up'
-    DOWN = 'down'
+    # UP = 'up'
+    # DOWN = 'down'
 
 
 class Status(Enum):
@@ -42,11 +42,14 @@ class OrderFee(Enum):
     TAKER = -0.00075
 
 
+# MARKET price
+MARKET_PRICE = 0  # use 0 for market price.
+
 # Minimum price distance change range
 MIN_DISTANCE = 0.5
 
 # Slippage min and max edge ticks number
-SLIPPAGE_TICK_MIN = 1500
+SLIPPAGE_TICK_MIN = 1800
 SLIPPAGE_TICK_MAX = 5000
 
 # Overload tick number.
@@ -90,4 +93,3 @@ if __name__ == '__main__':
     print(Direction.SHORT.value)
     print(Direction.SHORT)
     print(CAPITAL)
-    print(CODE_MAP)

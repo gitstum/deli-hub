@@ -52,7 +52,9 @@ class Tools(object):
 
     @staticmethod
     def arr_orders_prepare(df_book, adjust=None):
-        """"""
+        """
+        adjust order_price to: 'auto', 'market', None for not adjusting.
+        """
 
         # close SettingWithCopyWarning
         pd.set_option('mode.chained_assignment', None)
@@ -64,8 +66,8 @@ class Tools(object):
         df_book['trade_sig'] = df_book.pos_should - df_book.pos_should_old
 
         df_book['order_side'] = Direction.NONE
-        df_book['order_side'][df_book.trade_sig > 0] = 1  # or Direction.LONG
-        df_book['order_side'][df_book.trade_sig < 0] = -1  # or Direction.SHORT
+        df_book['order_side'][df_book.trade_sig > 0] = Direction.LONG  # or 1
+        df_book['order_side'][df_book.trade_sig < 0] = Direction.SHORT  # or -1
 
         df_book['order_value'] = df_book.trade_sig.abs()
 
@@ -75,16 +77,19 @@ class Tools(object):
         df_book = df_book[df_book.order_side != Direction.NONE]
         df_book.reset_index(drop=True, inplace=True)
 
-        # 设置限价委托的价格  
-        if adjust is None:
-            pass
-        elif adjust == 'market':
-            df_book['order_price'] = 0  # 0 for MARKET order
-        elif adjust == 'auto':  # 'auto' --用pos_regress区分轻重缓急 
-            df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] = \
-                df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] - LIMIT_DISTANCE
-            df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] = \
-                df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] - LIMIT_DISTANCE
+        # for LIMIT orders
+        if not 'order_price' in df_book.columns:
+            df_book['order_price'] = MARKET_PRICE  # choice: MARKET / end of period price. here the former.
+        else:
+            if adjust is None:
+                pass
+            elif adjust == 'market':
+                df_book['order_price'] = MARKET_PRICE  # force to MARKET order
+            elif adjust == 'auto':  # 'auto' --用pos_regress区分轻重缓急 
+                df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] = \
+                    df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] - LIMIT_DISTANCE
+                df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] = \
+                    df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] - LIMIT_DISTANCE
 
         arr_orders = np.array([
             df_book.timestamp.values,  # NOTE: auto change to int timestamp!
@@ -488,6 +493,13 @@ class Tools(object):
 
         # 2.合成运算所需df
 
+        if not 'price' in df_kbar.columns:
+            df_kbar['price'] = df_kbar['price_end']
+        for i in df_kbar.columns:
+            if i == 'price' or i == 'timestamp':
+                continue
+            df_kbar.drop(i, axis=1, inplace=True)
+
         df_kbar['timestamp'] = pd.to_datetime(df_kbar.timestamp)
         timedelta = df_kbar.loc[1, 'timestamp'] - df_kbar.loc[0, 'timestamp']
         # 让groupby的last()方法找到对应到price_end：
@@ -595,7 +607,6 @@ class Tools(object):
             num += 1
 
         # 5. 向量化运算赋值
-        # TODO 分别考虑有成交的情况和没有成交的情况
 
         df['re_pos'] = list_re_pos
         df['re_avg_price'] = list_re_avg_price

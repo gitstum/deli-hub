@@ -34,7 +34,7 @@ class Judge(Tools):
     """
 
     def __init__(self, name, df_book, df_price,
-                 judge_type='kbar', save_file=None,
+                 judge_type='kbar', save_file=None, adjust='auto',
                  exchange='BITMEX', symbol='XBTUSD'):
         """Create judgement object for a strategy.
 
@@ -43,6 +43,7 @@ class Judge(Tools):
             # exchange
             # symbol
             price  --decision tag price(at end of period)
+            order_price  --limit price to trade. 0 for market price.
             pos_should  --what pos should be hold (shortly) after the timestamp
         @param df_price: price info to judging if order in df_book can be filled(traded), should be longer than df_book.
         @param judge_type:
@@ -56,7 +57,9 @@ class Judge(Tools):
             'tick'  -- to specify df_price a tick price DataFrame, from:
                 tools.get_tick_comp_price()
                 tools.tick_comp_price()
+
         @param save_file: path & file name to save trading result.
+        @param adjust: adjust order_price to: 'auto', 'market', None for not adjusting.
 
         NOTE:
             'kbar' judgement Assumptions:
@@ -80,11 +83,12 @@ class Judge(Tools):
         self.df_price = df_price
         self.judge_type = judge_type
         self.save_file = save_file
+        self.adjust = adjust
         self.symbol = exchange + '.' + symbol
 
         print('%s | %s | Preparing data.' % (self.str_time(), self.name))
 
-        self.arr_orders = self.arr_orders_prepare(df_book)
+        self.arr_orders = self.arr_orders_prepare(df_book, adjust=adjust)
         self.order_num = 0
         self.order_num_max = self.arr_orders.shape[1]
         self.arr_price = self.arr_price_prepare(df_price)
@@ -125,6 +129,7 @@ class Judge(Tools):
 
         print('%s | %s | Starting evaluation.' % (self.str_time(), self.name))
         self.trading_record.pop('order_ID')  # TODO get_score() overridden
+        print(self.trading_record)
         result = self.get_score(self.trading_record, self.df_price, annual_period=365*24*60, save_file=self.save_file)
 
         print('%s | %s | Judgement instance ended for %s.' % (self.str_time(), self.name, self.name))
