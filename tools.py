@@ -17,18 +17,18 @@ class Tools(object):
 
     @staticmethod
     def agg_cal(func, *args, process_num=None):
-        """Multi-processing framework for functions.
+        """Multi-processing framework for functionX with agg_cal:
 
-        How to call:
-            result1, result2 = func.agg_cal((param1,), (param2,))
-            result1, result2 = Tools.agg_cal(func,
-                                             (param1, ), (param2),
+        To call:
+            result1, result2 = functionX.agg_cal((param1,), (param2,))
+            result1, result2 = Tools.agg_cal(functionX,
+                                             (param1,), (param2,),
                                              process_num=4
                                             )
         """
 
-        result_list1 = []
-        result_list2 = []
+        result_tags = []
+        results = []
 
         if not process_num:
             pool = mp.Pool()
@@ -36,17 +36,325 @@ class Tools(object):
             pool = mp.Pool(processes=process_num)
 
         for i in args:
-            result1 = pool.apply_async(func, i)
-            result_list1.append(result1)
+            tag = pool.apply_async(func, i)  # i must be tuple
+            result_tags.append(tag)
 
         pool.close()
         pool.join()
 
-        for r in result_list1:
-            result2 = r.get()
-            result_list2.append(result2)
+        for tag in result_tags:
+            result = tag.get()
+            results.append(result)
 
-        return result_list2
+        return results
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sig_merge(*signals):
+        """Merge signals(pos_should) Series into a DataFrame
+
+        :param signals: signals Series
+            index: timestamp
+            value: pos_should signal
+        :return:
+        """
+
+        list_series = []
+        for s in signals:
+            list_series.append(s)
+
+        df_sig = pd.concat(list_series, axis=1).fillna(method='ffill')
+
+        # dev
+        print('sig_merge()   -----------------------')
+        print(type(df_sig))
+        print(df_sig)
+
+        return df_sig
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sig_weight(signal, weight):
+        """Return a weighted pos_should signal Series.
+
+        :param signal: a signal Series
+            index: timestamp
+            value: pos_should signal
+        :param weight: weight of the signal
+        :return: weighted pos_should signal Series
+        """
+
+        return signal * weight
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sig_to_one(method, *signals):
+        """分流函数
+
+        :param method: method for merging signals into one
+        :param signals: pos_should signals Series(weighted)f
+        :return: pos_should signal
+        """
+
+        if not method in Method.ALL.value:
+            print("Can't find method '%s' in constant.Method." % method)
+            return pd.DataFrame()
+
+        # debug
+        # for i in signals:
+        #     print(type(i))
+        #     print(i)
+        #     print('-' * 10)
+        # print('-' * 20)
+
+        if method == 'comb_sum1':
+            return Tools.comb_sum1(*signals)
+        elif method == 'comb_vote1':
+            return Tools.comb_vote1(*signals)
+        elif method == 'comb_min1':
+            return Tools.comb_min1(*signals)
+        elif method == 'perm_add1':
+            return Tools.perm_add1(*signals)
+        elif method == 'perm_add2':
+            return Tools.perm_add2(*signals)
+        elif method == 'perm_cut1':
+            return Tools.perm_cut1(*signals)
+
+        else:
+            print('No method assigned in staticmethod sig_to_one()')
+            return pd.DataFrame()
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def comb_sum1(*signals):
+        """Pos_should signal merge method: comb_sum1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal
+        """
+
+        df_sig = Tools.sig_merge(*signals)
+
+        result_sig = df_sig.sum(axis=1)
+
+        return result_sig
+
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def comb_vote1(*signals):
+        """Pos_should signal merge method: comb_vote1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal  -- -1/0/1
+        """
+
+        result_ref = Tools.comb_sum1(*signals)  # NOTE this depends on comb_sum1()
+
+        df_result = pd.DataFrame(result_ref, columns=['result_ref'])
+        df_result['result_sig'] = 0
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning 
+        df_result['result_sig'][df_result['result_ref'] > 0] = 1
+        df_result['result_sig'][df_result['result_ref'] < 0] = -1
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def comb_min1(*signals):
+        """Pos_should signal merge method: comb_min1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal
+        """
+
+        df_sig = Tools.sig_merge(*signals)
+
+        df_result = pd.DataFrame(df_sig.max(axis=1), columns=['sig_max'])
+        df_result['sig_min'] = df_sig.min(axis=1)
+
+        df_result['result_sig'] = 0
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+        df_result['result_sig'][df_result['sig_max'] < 0] = df_result['sig_max'][df_result['sig_max'] < 0]
+        df_result['result_sig'][df_result['sig_min'] > 0] = df_result['sig_min'][df_result['sig_min'] > 0]
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_add1(*signals):
+        """Pos_should signal merge method: perm_add1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal
+        """
+
+        # TODO: verify codes here
+
+        df_sig = Tools.sig_merge(*signals)
+
+
+        # TODO: method development
+        pass
+        result = 'to be done'
+
+        return result
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_add2(*signals):
+        """Pos_should signal merge method: perm_add2
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal
+        """
+
+        # TODO: verify codes here
+
+        df_sig = Tools.sig_merge(*signals)
+
+
+        # TODO: method development
+        pass
+        result = 'to be done'
+
+        return result
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_cut1(*signals):
+        """Pos_should signal merge method: perm_cut1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal
+        """
+
+        # TODO: verify codes here
+
+        df_sig = Tools.sig_merge(*signals)
+
+
+        # TODO: method development
+        pass
+        result = 'to be done'
+
+        return result
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def arr_orders_prepare(df_book, adjust=None):
+        """
+        adjust order_price to: 'auto', 'market', None for not adjusting.
+        """
+
+        # close SettingWithCopyWarning
+        pd.set_option('mode.chained_assignment', None)
+
+        df_book['timestamp'] = pd.to_datetime(df_book.timestamp)
+
+        pos_should_old = np.append(np.array([POS_START]), df_book['pos_should'])
+        df_book['pos_should_old'] = pos_should_old[:-1]
+        df_book['trade_sig'] = df_book.pos_should - df_book.pos_should_old
+
+        df_book['order_side'] = Direction.NONE
+        df_book['order_side'][df_book.trade_sig > 0] = Direction.LONG  # or 1
+        df_book['order_side'][df_book.trade_sig < 0] = Direction.SHORT  # or -1
+
+        df_book['order_value'] = df_book.trade_sig.abs()
+
+        df_book['pos_regress'] = 0  # False
+        df_book['pos_regress'][df_book.pos_should.abs() < df_book.pos_should_old.abs()] = 1  # True
+
+        df_book = df_book[df_book.order_side != Direction.NONE]
+        df_book.reset_index(drop=True, inplace=True)
+
+        # for LIMIT orders
+        if not 'order_price' in df_book.columns:
+            df_book['order_price'] = MARKET_PRICE  # choice: MARKET / end of period price. here the former.
+        else:
+            if adjust is None:
+                pass
+            elif adjust == 'market':
+                df_book['order_price'] = MARKET_PRICE  # force to MARKET order
+            elif adjust == 'auto':  # 'auto' --用pos_regress区分轻重缓急 
+                df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] = \
+                    df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 1)] - LIMIT_DISTANCE
+                df_book['order_price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] = \
+                    df_book['price'][(df_book.pos_regress == 0) & (df_book.order_side == 0)] - LIMIT_DISTANCE
+
+        arr_orders = np.array([
+            df_book.timestamp.values,  # NOTE: auto change to int timestamp!
+            df_book.order_side.values,
+            df_book.order_price.values,
+            df_book.order_value.values
+        ], )
+
+        # reopen SettingWithCopyWarning
+        pd.set_option('mode.chained_assignment', 'warn')
+
+        return arr_orders
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def arr_price_prepare(df_price):
+        """Convert kbar pd.DataFrame to np.Array.
+
+        @param df_price: kbar DataFrame, includes:
+            timestamp  -- start time of the period. NOTE this is different than timestamp in df_book!
+            price_start
+            price_end
+            price_max
+            price_end
+            ticks  --how many L1 changes the period has.
+        @return: np.Array: [line_data, line_index], NOTE that timestamp is converted to int.
+        """
+
+        df_price['timestamp'] = pd.to_datetime(df_price.timestamp)
+
+        arr_price = np.array([
+            df_price.timestamp.values,  # NOTE: auto change to int timestamp!
+            df_price.price_start.values,
+            df_price.price_end.values,
+            df_price.price_max.values,
+            df_price.price_min.values,
+            df_price.ticks.values
+        ])
+
+        return arr_price
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_bar_data(arr_price, num):
+        """To get No.num kbar data in arr_price
+
+        @param arr_price: fromt arr_price_prepare()
+        @param num: index
+        @return: each kbar data
+        """
+        line = arr_price[..., num]
+
+        timestamp = line[0]
+        price_start = line[1]
+        price_end = line[2]
+        price_max = line[3]
+        price_min = line[4]
+        ticks = line[5]
+
+        return timestamp, price_start, price_end, price_max, price_min, ticks
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -70,10 +378,10 @@ class Tools(object):
             - 在调用本函数之前，另行判断是否overload --无法进入成交判断，因为没有能成功提交订单到交易所
         """
 
-        if order_side == Direction.SHORT:
+        if order_side == 0 or order_side == Direction.SHORT:
             trade_price, fee_rate = Tools.short_judge_kbar(price_start, price_end, price_max, price_min,
                                                            order_price=order_price, ticks=ticks, first_time=first_time)
-        elif order_side == Direction.LONG:
+        elif order_side == 1 or order_side == Direction.LONG:
             trade_price, fee_rate = Tools.long_judge_kbar(price_start, price_end, price_max, price_min,
                                                           order_price=order_price, ticks=ticks, first_time=first_time)
         else:
@@ -94,9 +402,9 @@ class Tools(object):
         if np.isnan(bar_direction):
             return np.nan, np.nan  # no trades happened.
 
-        # 1. MARKET / STOP / LIQUIDATION order
+        # 1. MARKET / STOP / LIQUIDATION order  --first_time=True
 
-        if order_price is None:
+        if not order_price:
 
             slippage = Tools.get_slippage(price_start, price_min, ticks, how='bad')
             if slippage < MIN_DISTANCE and np.random.random() < 0.5:
@@ -191,7 +499,7 @@ class Tools(object):
 
         # 1. MARKET / STOP / LIQUIDATION order
 
-        if order_price is None:
+        if not order_price:
 
             slippage = Tools.get_slippage(price_max, price_start, ticks, how='bad')
             if slippage < MIN_DISTANCE and np.random.random() < 0.5:
@@ -317,10 +625,10 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def fit_to_minimal(number, min_range=MIN_DISTANCE):
+    def fit_to_minimal(float_price, min_range=MIN_DISTANCE):
         """To fit a price / price_delta to exchange's minimal price distance."""
 
-        return round(number * (1 / min_range)) / (1 / min_range)
+        return round(float_price * (1 / min_range)) / (1 / min_range)
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -348,15 +656,18 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def get_score(trading_record, df_kbar, capital=CAPITAL, annual_period=ANNUAL_PERIOD, save_path=None):
+    def get_score(trading_record, df_kbar, capital=CAPITAL, annual_period=ANNUAL_PERIOD, save_file=None):
         """Get performance from trading records and prices.
 
         @param trading_record: Dict of traded result(and no other like cancelled), must include these keys:
             timestamp  --of the event
             side  --order direction
-            price  --object price in fiat
+            price  --traded price in fiat
             order_value  --fiat value, volume in fiat, to detect if traded in this line.
             fee_rate  --in float
+
+            new:
+            order_price
 
         @param df_kbar: 1 minute / 1 hour close price df, includes:
             timestamp  --period time start
@@ -368,8 +679,9 @@ class Tools(object):
             day: 365
             week:  52
             month: 12
-        @param save_path: to store results on disk.  --NOTE: file's max time period is equal to df_kbar!
+        @param save_file: to store results on disk.  --NOTE: file's max time period is equal to df_kbar!
         @return: annual score, python dict
+
         """
 
         pd.set_option('mode.chained_assignment', None)  # 关闭 SettingWithCopyWarning 警告
@@ -383,6 +695,13 @@ class Tools(object):
         df_traded['timestamp'] = pd.to_datetime(df_traded.timestamp)
 
         # 2.合成运算所需df
+
+        if not 'price' in df_kbar.columns:
+            df_kbar['price'] = df_kbar['price_end']
+        for i in df_kbar.columns:
+            if i == 'price' or i == 'timestamp':
+                continue
+            df_kbar.drop(i, axis=1, inplace=True)
 
         df_kbar['timestamp'] = pd.to_datetime(df_kbar.timestamp)
         timedelta = df_kbar.loc[1, 'timestamp'] - df_kbar.loc[0, 'timestamp']
@@ -403,8 +722,8 @@ class Tools(object):
         # 3. 更换计算单位
 
         df['re_direction'] = np.nan
-        df['re_direction'][df.side == Direction.SHORT] = 1
-        df['re_direction'][df.side == Direction.LONG] = -1
+        df['re_direction'][(df.side == Direction.SHORT) | (df.side == -1)] = 1
+        df['re_direction'][(df.side == Direction.LONG) | (df.side == 1)] = -1
         df['re_price'] = 1 / df.price
         df['re_size'] = df.order_value * df.re_price
 
@@ -557,8 +876,8 @@ class Tools(object):
                       }
 
         # 7. save
-        if save_path:
-            df.to_csv('%s' % save_path, index=False)
+        if save_file:
+            df.to_csv('%s' % save_file, index=False)
 
         pd.set_option('mode.chained_assignment', 'warn')  # 重新打开警告
 
@@ -931,7 +1250,7 @@ if __name__ == '__main__':
                             df_price,
                             capital=1000,
                             annual_period=(365 * 24),
-                            # save_path='trading_record_test(after).csv'
+                            # save_file='trading_record_test(after).csv'
                             )
     print(score)
 
