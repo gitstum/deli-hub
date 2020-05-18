@@ -88,8 +88,38 @@ POS_START = 0
 # Default distance(to tick price) for limit order
 LIMIT_DISTANCE = 0.5  # the bigger the safer but harder to get traded
 
+# ---------------------------------------------------------------------------------------------------------
+
+# Method Category
+
+class Method(Enum):
+    """合并成pos_should信号的方法"""
+
+    ALL = ['comb_sum1', 'comb_vote1', 'comb_min1',
+           'perm_add1', 'perm_add2', 'perm_cut1']
+
+    # 组合求解
+    COMBINATION = ['comb_sum1',  # 对各列signal进行加和
+                   'comb_vote1',  # 使用各列signal投票 （-1/0/1）
+                   'comb_min1'  # 多/空方向：取各列signal中绝对值最小的，以做多/空
+                   ]
+
+    # 排列求解：按序处理signal列，求得单列pos_should
+    PERMUTATION = ['perm_add1',  # 多/空方向：减小/增加的signal，后续signal可加回/减去
+                   'perm_add2',  # 多/空方向：限同号（正负）：减小/增加的signal，后续signal可加回/减去，出现0或符号变化则为0
+                   'perm_cut1'  # 多/空方向：一旦signal减小/增加, 不可加回/减去，直至归0
+                   ]
+
+
+
 
 if __name__ == '__main__':
     print(Direction.SHORT.value)
     print(Direction.SHORT)
     print(CAPITAL)
+
+
+
+
+
+

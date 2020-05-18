@@ -51,6 +51,209 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def sig_merge(*signals):
+        """Merge signals(pos_should) Series into a DataFrame
+
+        :param signals: signals Series
+            index: timestamp
+            value: pos_should signal
+        :return:
+        """
+
+        list_series = []
+        for s in signals:
+            list_series.append(s)
+
+        df_sig = pd.concat(list_series, axis=1).fillna(method='ffill')
+
+        # dev
+        print('sig_merge()   -----------------------')
+        print(type(df_sig))
+        print(df_sig)
+
+        return df_sig
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sig_weight(signal, weight):
+        """Return a weighted pos_should signal Series.
+
+        :param signal: a signal Series
+            index: timestamp
+            value: pos_should signal
+        :param weight: weight of the signal
+        :return: weighted pos_should signal Series
+        """
+
+        return signal * weight
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sig_to_one(method, *signals):
+        """分流函数
+
+        :param method: method for merging signals into one
+        :param signals: pos_should signals Series(weighted)f
+        :return: pos_should signal
+        """
+
+        if not method in Method.ALL.value:
+            print("Can't find method '%s' in constant.Method." % method)
+            return pd.DataFrame()
+
+        # debug
+        # for i in signals:
+        #     print(type(i))
+        #     print(i)
+        #     print('-' * 10)
+        # print('-' * 20)
+
+        if method == 'comb_sum1':
+            return Tools.comb_sum1(*signals)
+        elif method == 'comb_vote1':
+            return Tools.comb_vote1(*signals)
+        elif method == 'comb_min1':
+            return Tools.comb_min1(*signals)
+        elif method == 'perm_add1':
+            return Tools.perm_add1(*signals)
+        elif method == 'perm_add2':
+            return Tools.perm_add2(*signals)
+        elif method == 'perm_cut1':
+            return Tools.perm_cut1(*signals)
+
+        else:
+            print('No method assigned in staticmethod sig_to_one()')
+            return pd.DataFrame()
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def comb_sum1(*signals):
+        """Pos_should signal merge method: comb_sum1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal
+        """
+
+        df_sig = Tools.sig_merge(*signals)
+
+        result_sig = df_sig.sum(axis=1)
+
+        return result_sig
+
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def comb_vote1(*signals):
+        """Pos_should signal merge method: comb_vote1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal  -- -1/0/1
+        """
+
+        result_ref = Tools.comb_sum1(*signals)  # NOTE this depends on comb_sum1()
+
+        df_result = pd.DataFrame(result_ref, columns=['result_ref'])
+        df_result['result_sig'] = 0
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning 
+        df_result['result_sig'][df_result['result_ref'] > 0] = 1
+        df_result['result_sig'][df_result['result_ref'] < 0] = -1
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def comb_min1(*signals):
+        """Pos_should signal merge method: comb_min1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal
+        """
+
+        df_sig = Tools.sig_merge(*signals)
+
+        df_result = pd.DataFrame(df_sig.max(axis=1), columns=['sig_max'])
+        df_result['sig_min'] = df_sig.min(axis=1)
+
+        df_result['result_sig'] = 0
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+        df_result['result_sig'][df_result['sig_max'] < 0] = df_result['sig_max'][df_result['sig_max'] < 0]
+        df_result['result_sig'][df_result['sig_min'] > 0] = df_result['sig_min'][df_result['sig_min'] > 0]
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_add1(*signals):
+        """Pos_should signal merge method: perm_add1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal
+        """
+
+        # TODO: verify codes here
+
+        df_sig = Tools.sig_merge(*signals)
+
+
+        # TODO: method development
+        pass
+        result = 'to be done'
+
+        return result
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_add2(*signals):
+        """Pos_should signal merge method: perm_add2
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal
+        """
+
+        # TODO: verify codes here
+
+        df_sig = Tools.sig_merge(*signals)
+
+
+        # TODO: method development
+        pass
+        result = 'to be done'
+
+        return result
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_cut1(*signals):
+        """Pos_should signal merge method: perm_cut1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal
+        """
+
+        # TODO: verify codes here
+
+        df_sig = Tools.sig_merge(*signals)
+
+
+        # TODO: method development
+        pass
+        result = 'to be done'
+
+        return result
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def arr_orders_prepare(df_book, adjust=None):
         """
         adjust order_price to: 'auto', 'market', None for not adjusting.
