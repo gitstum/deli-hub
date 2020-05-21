@@ -60,11 +60,13 @@ class Tools(object):
         :return:
         """
 
+        print(signals)
+
         list_series = []
         for s in signals:
             list_series.append(s)
 
-        df_sig = pd.concat(list_series, axis=1).fillna(method='ffill')
+        df_sig = pd.concat(list_series, axis=1, sort=False).fillna(method='ffill')
 
         # dev
         print('sig_merge()   -----------------------')
@@ -110,18 +112,27 @@ class Tools(object):
         #     print('-' * 10)
         # print('-' * 20)
 
-        if method == 'comb_sum1':
-            return Tools.comb_sum1(*signals)
+        if method == 'comb_sum':
+            return Tools.comb_sum(*signals)
         elif method == 'comb_vote1':
             return Tools.comb_vote1(*signals)
-        elif method == 'comb_min1':
-            return Tools.comb_min1(*signals)
-        elif method == 'perm_add1':
-            return Tools.perm_add1(*signals)
-        elif method == 'perm_add2':
-            return Tools.perm_add2(*signals)
-        elif method == 'perm_cut1':
-            return Tools.perm_cut1(*signals)
+        elif method == 'comb_vote2':
+            return Tools.comb_vote2(*signals)
+        elif method == 'comb_vote3':
+            return Tools.comb_vote3(*signals)
+        elif method == 'comb_min':
+            return Tools.comb_min(*signals)
+
+        elif method == 'perm_cond':
+            return Tools.perm_cond(*signals)
+        elif method == 'perm_add':
+            return Tools.perm_add(*signals)
+        elif method == 'perm_sub':
+            return Tools.perm_sub(*signals)
+        elif method == 'perm_up':
+            return Tools.perm_up(*signals)
+        elif method == 'perm_down':
+            return Tools.perm_down(*signals)
 
         else:
             print('No method assigned in staticmethod sig_to_one()')
@@ -130,8 +141,9 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def comb_sum1(*signals):
-        """Pos_should signal merge method: comb_sum1
+    def comb_sum(*signals):
+        """Pos_should signal merge method: comb_sum1  
+        ---对各列signal进行加和
 
         :param signals: pos_should signals Series (weighted)
         :return: pos_should signal
@@ -143,18 +155,18 @@ class Tools(object):
 
         return result_sig
 
-
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
     def comb_vote1(*signals):
-        """Pos_should signal merge method: comb_vote1
+        """Pos_should signal merge method: comb_vote1  
+        ---使用各列signal投票，加和，输出为：-1/0/1
 
         :param signals: pos_should signals Series (weighted)
         :return: pos_should signal  -- -1/0/1
         """
 
-        result_ref = Tools.comb_sum1(*signals)  # NOTE this depends on comb_sum1()
+        result_ref = Tools.comb_sum(*signals)  # NOTE this depends on comb_sum1()
 
         df_result = pd.DataFrame(result_ref, columns=['result_ref'])
         df_result['result_sig'] = 0
@@ -168,8 +180,57 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def comb_min1(*signals):
-        """Pos_should signal merge method: comb_min1
+    def comb_vote2(*signals):
+        """Pos_should signal merge method: comb_vote2  
+        ---使用各列signal投票，须无反对票，输出为：-1/0/1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal  -- -1/0/1
+        """
+
+        df_sig = Tools.sig_merge(*signals)
+
+        df_result = pd.DataFrame(df_sig.max(axis=1), columns=['sig_max'])
+        df_result['sig_min'] = df_sig.min(axis=1)
+
+        df_result['result_sig'] = 0
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+        df_result['result_sig'][df_result['sig_max'] <= 0] = -1
+        df_result['result_sig'][df_result['sig_min'] >= 0] = 1
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def comb_vote3(*signals):
+        """Pos_should signal merge method: comb_vote3  
+        ---使用各列signal投票，须全票通过，输出为：-1/0/1
+
+        :param signals: pos_should signals Series (weighted)
+        :return: pos_should signal  -- -1/0/1
+        """
+
+        df_sig = Tools.sig_merge(*signals)
+
+        df_result = pd.DataFrame(df_sig.max(axis=1), columns=['sig_max'])
+        df_result['sig_min'] = df_sig.min(axis=1)
+
+        df_result['result_sig'] = 0
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+        df_result['result_sig'][df_result['sig_max'] < 0] = -1
+        df_result['result_sig'][df_result['sig_min'] > 0] = 1
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def comb_min(*signals):
+        """Pos_should signal merge method: comb_min
+        ---多/空方向：取各列signal中最小/最大的，以做多/空。如sig含有相反符号，则返回0（可用于判断）
 
         :param signals: pos_should signals Series (weighted)
         :return: pos_should signal
@@ -191,65 +252,202 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def perm_add1(*signals):
-        """Pos_should signal merge method: perm_add1
+    def perm_cond(cond, pos_should):
+        """Pos_should signal method: permutation condition
+        ---在满足cond方向（正负，对比0）的条件下，pos_should如同方向（正负），使用其值，其余为0 【限2列】
 
-        :param signals: pos_should signals Series (weighted)
+        :param cond: condition to accept pos_should
+        :param pos_should: pos_should signals Series (weighted)
         :return: pos_should signal
         """
 
-        # TODO: verify codes here
+        df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
 
-        df_sig = Tools.sig_merge(*signals)
+        df_sig['result_ref'] = df_sig.iloc[:, 0] * df_sig.iloc[:, 1]
+        df_sig['result_sig'] = df_sig.iloc[:, 1][df_sig['result_ref'] > 0]
 
+        result_sig = df_sig['result_sig'].fillna(0)
 
-        # TODO: method development
-        pass
-        result = 'to be done'
-
-        return result
+        return result_sig
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def perm_add2(*signals):
-        """Pos_should signal merge method: perm_add2
+    def sig_trend(*signals):
+        """Compare each Series line by line
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal
+        :param signals: Series
+        :return: DataFrame
         """
-
-        # TODO: verify codes here
-
         df_sig = Tools.sig_merge(*signals)
 
+        column_num = len(df_sig.columns)
+        num = 0
+        df_trend = pd.DataFrame()  # if len(signals) < 2: return an empty df
 
-        # TODO: method development
-        pass
-        result = 'to be done'
+        while num < column_num - 1:
+            df_trend[num] = df_sig.iloc[:, num + 1] - df_sig.iloc[:, num]
+            num += 1
 
-        return result
+        return df_trend
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def perm_cut1(*signals):
-        """Pos_should signal merge method: perm_cut1
+    def df_to_series(df):
+        """Turn a pd.DataFrame into a tuple containing all the Series."""
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal
+        list_series = []
+        column_num = len(df.columns)
+        num = 0
+
+        while num < column_num:
+            list_series.append(df.iloc[:, num])
+            num += 1
+
+        return tuple(list_series)
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sig_one_direction(*signals):
+        """Check each df line to see if values (in each signal) goes straight or not
+
+        :param signals: Series
+        :return: one Series
+            -1: signals go straight down
+            1: signals go straight up
+            0: signals don't go straight down (even/rebound within)
         """
 
-        # TODO: verify codes here
+        df_trend = Tools.sig_trend(*signals)
+        trend_signals = Tools.df_to_series(df_trend)
+        result_ref = Tools.comb_min(*trend_signals)  # 注意这里用拆包语法
+
+        result_ref.name = 'result_ref'
+        df_sig = pd.DataFrame(result_ref)
+        df_sig['result_sig'] = 0
+        df_sig['result_sig'][df_sig['result_ref'] > 0] = 1  # NOTE ">=" can't be set here
+        df_sig['result_sig'][df_sig['result_ref'] < 0] = -1
+
+        return df_sig['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sig_direction(*signals):
+        """Check each df line to see if values (in each signal) eventually goes up/down
+
+        :param signals: Series
+        :return:
+            -1: signals go down eventually but not straight
+            1: signals go up eventually but not straight
+            0: other situations: even, straight
+        """
+
+        # if len(signals) < 3:
+        #     return np.nan
 
         df_sig = Tools.sig_merge(*signals)
 
+        df_sig['sig_start'] = df_sig.iloc[:, 0]
+        df_sig['sig_end'] = df_sig.iloc[:, -2]  # -2: cause 'sig_start' became -1 
+        df_sig['direction'] = df_sig['sig_end'] - df_sig['sig_start']
 
-        # TODO: method development
-        pass
-        result = 'to be done'
+        result_ref = Tools.sig_one_direction(*signals)
+        df_sig['one_direction'] = result_ref
 
-        return result
+        df_sig['result_ref'] = df_sig['direction'][df_sig['one_direction'] == 0]
+        df_sig['result_sig'] = 0
+
+        result_sig = df_sig['result_sig'].copy()
+        result_sig[df_sig['result_ref'] > 0] = 1
+        result_sig[df_sig['result_ref'] < 0] = -1
+
+        return result_sig
+
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_add(*signals):
+        """Pos_should signal merge method: permutation addition
+        --- 一直涨，sig值越来越大:1，否则0
+
+        :param signals: pos_should signals Series (weighted)
+        :return: signal: 0/1
+        """
+
+        result_ref = Tools.sig_one_direction(*signals)
+
+        result_ref.name = 'result_ref'
+        df_sig = pd.DataFrame(result_ref)
+        df_sig['result_sig'] = 0
+        df_sig['result_sig'][df_sig['result_ref'] > 0] = 1
+
+        return df_sig['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_sub(*signals):
+        """Pos_should signal merge method: permutation subtract
+        --- 一直跌，sig值越来越小:1， 否则0
+
+        :param signals: pos_should signals Series (weighted)
+        :return: signal: 0/1
+        """
+
+        result_ref = Tools.sig_one_direction(*signals)
+
+        result_ref.name = 'result_ref'
+        df_sig = pd.DataFrame(result_ref)
+        df_sig['result_sig'] = 0
+        df_sig['result_sig'][df_sig['result_ref'] < 0] = 1
+
+        return df_sig['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_up(*signals):
+        """Pos_should signal merge method: permutation go up
+        --- sig值震荡（含持平）上涨：1，否则0
+
+        :param signals: pos_should signals Series (weighted)
+        :return: signal: 0/1
+        """
+
+        result_ref = Tools.sig_direction(*signals)
+
+        result_ref.name = 'result_ref'
+        df_sig = pd.DataFrame(result_ref)
+        df_sig['result_sig'] = 0
+        df_sig['result_sig'][df_sig['result_ref'] > 0] = 1
+
+        return df_sig['result_sig']
+
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_down(*signals):
+        """Pos_should signal merge method: permutation go up
+        --- sig值震荡（含持平）下跌：1，否则0
+
+        :param signals: pos_should signals Series (weighted)
+        :return: signal: 0/1
+        """
+
+        result_ref = Tools.sig_direction(*signals)
+
+        result_ref.name = 'result_ref'
+        df_sig = pd.DataFrame(result_ref)
+        df_sig['result_sig'] = 0
+        df_sig['result_sig'][df_sig['result_ref'] < 0] = 1
+
+        return df_sig['result_sig']
+
 
     # -----------------------------------------------------------------------------------------------------------------
 
