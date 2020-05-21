@@ -93,21 +93,29 @@ LIMIT_DISTANCE = 0.5  # the bigger the safer but harder to get traded
 # Method Category
 
 class Method(Enum):
-    """合并成pos_should信号的方法"""
+    """合并成pos_should信号的方法
+    相关函数：
+        Tools.sig_to_one()
+        Tools.各方法名字对应的函数()
+    """
 
-    ALL = ['comb_sum1', 'comb_vote1', 'comb_min1',
-           'perm_add1', 'perm_add2', 'perm_cut1']
+    ALL = ['comb_sum', 'comb_vote1', 'comb_vote2', 'comb_vote3', 'comb_min',
+           'perm_cond', 'perm_add', 'perm_sub', 'perm_up', 'perm_down']
 
     # 组合求解
-    COMBINATION = ['comb_sum1',  # 对各列signal进行加和
-                   'comb_vote1',  # 使用各列signal投票 （-1/0/1）
-                   'comb_min1'  # 多/空方向：取各列signal中绝对值最小的，以做多/空
+    COMBINATION = ['comb_sum',  # 对各列signal进行加和
+                   'comb_vote1',  # 使用各列signal投票，加和，输出为：-1/0/1
+                   'comb_vote2',  # 使用各列signal投票，须无反对票，输出为：-1/0/1
+                   'comb_vote3',  # 使用各列signal投票，须全票通过，输出为：-1/0/1
+                   'comb_min'  # 多/空方向：取各列signal中最小/最大的（以做多/空）。如sig含有相反符号，则返回0（可用于判断）
                    ]
 
-    # 排列求解：按序处理signal列，求得单列pos_should
-    PERMUTATION = ['perm_add1',  # 多/空方向：减小/增加的signal，后续signal可加回/减去
-                   'perm_add2',  # 多/空方向：限同号（正负）：减小/增加的signal，后续signal可加回/减去，出现0或符号变化则为0
-                   'perm_cut1'  # 多/空方向：一旦signal减小/增加, 不可加回/减去，直至归0
+    # 排列求解：按序依次判断（/比较）
+    PERMUTATION = ['perm_cond',  # 在满足a方向（正负，对比0）的条件下，使用同方向（正负）的b的pos_should，其余0 【限2列】
+                   'perm_add',  # 一直涨，sig值越来越大:1，否则0
+                   'perm_sub',  # 一直跌，sig值越来越小:1， 否则0
+                   'perm_up',  # sig值震荡（含持平）上涨：1，否则0
+                   'perm_down'  # sig值震荡（含持平）下跌：1，否则0
                    ]
 
 
