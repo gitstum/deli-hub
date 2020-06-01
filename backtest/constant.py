@@ -1,8 +1,7 @@
-#--coding:utf-8--
+# --coding:utf-8--
 
 from enum import Enum
 import numpy as np
-
 
 
 class Direction(Enum):
@@ -37,7 +36,6 @@ class OrderType(Enum):
 
 
 class OrderFee(Enum):
-
     MAKER = 0.0001
     TAKER = -0.00075
 
@@ -88,12 +86,11 @@ POS_START = 0
 # Default distance(to tick price) for limit order
 LIMIT_DISTANCE = 0.5  # the bigger the safer but harder to get traded
 
+
 # ---------------------------------------------------------------------------------------------------------
 
-# Method Category
-
 class Method(Enum):
-    """合并成pos_should信号的方法
+    """合并成pos_should信号的方法  Method Category
     相关函数：
         Tools.sig_to_one()
         Tools.各方法名字对应的函数()
@@ -119,15 +116,32 @@ class Method(Enum):
                    ]
 
 
+# ---------------------------------------------------------------------------------------------------------
+
+class Classifier(Enum):
+    """ 将特征、指标转化为分类器
+
+  """
+
+    CATES = ['origin',  # 有含义的原始数据，价格、交易量等等
+             'real',  # 负无穷到正无穷
+             'abs',  # 0到正无穷
+             'normal_real',  # 负无穷到正无穷, 标准化
+             'normal_abs'  # 0到正无穷 标准化
+             ]  # Classifier Category
+
+    FUNCTIONS = ['cut_number',  # 自切割，常量切割
+                 'cut_rank',  # 自切割，百分比排名切割
+                 'cut_sigma',  # 自切割，sigma比例切割
+                 'cut_distance',  # 自切割，全距比例切割
+
+                 'compare_distance',  # 比较分类，距离比较（比大小：距离为0）
+                 'compare_ratio'  # 比较分类，比例比较  -- 适用于abs
+                 ]
+
 
 
 if __name__ == '__main__':
     print(Direction.SHORT.value)
     print(Direction.SHORT)
     print(CAPITAL)
-
-
-
-
-
-
