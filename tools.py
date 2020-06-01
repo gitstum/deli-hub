@@ -51,6 +51,118 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def str_time():
+        """获取str时间信息"""
+
+        now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))
+        return now
+
+    # 分类序列生成函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cut_number(feature, *cut_points):
+        """特征分类函数，自切割，常量切割  (缺点在于步长个性化太强，需要单独设置参数)
+
+        :param feature: feature Series (timestamp index) to be cut
+        :param cut_points: constant values to cut feature
+        :return: cut result: 0, 1, 2 ...
+        """
+
+        feature.name = 'data'
+
+        df_result = pd.DataFrame(feature)
+        df_result['cut'] = 0
+
+        for num in list(range(len(cut_points))):
+            df_result['cut'][df_result['data'] >= cut_points[num]] = num + 1
+
+        return df_result['cut']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cut_rank(feature, *cut_percents, window=0):
+        """特征分类函数，自切割，分布比例切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
+
+        :param feature: feature Series (timestamp index) to be cut
+        :param window: rolling window for range reference
+        :param cut_percents: percent in float(0-1) to cut features apart
+        :return: cut result: 0, 1, 2 ...
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        feature.name = 'data'
+        df_result = pd.DataFrame(feature)
+        df_result['cut'] = 0
+
+        num = 0
+        for percent in cut_percents:
+
+            if window == 0:
+                df_result['cut_ref'] = df_result['data'].quantile(percent)  # 有利于提升速度（每列都分别rolling一下太慢）
+            else:
+                df_result['cut_ref'] = df_result['data'].rolling(window).quantile(percent).fillna(method='bfill')
+
+            df_result['cut'][df_result['data'] > df_result['cut_ref']] = num + 1
+            num += 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['cut']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cut_sigma(feature, *cut_sigmas, window=0):
+        """特征分类函数，自切割，分布倍数切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
+
+        :param feature: feature Series (timestamp index) to be cut
+        :param window: rolling window for range reference
+        :param cut_sigmas: float(0-1) of sigma to cut features apart
+        :return: cut result: -2, -1, 0, 1, 2, 3...
+
+        NOTE: support negative-positive, positive-only and negative-only feature (但是外部的映射字典不要弄错)
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        feature.name = 'data'
+        df_result = pd.DataFrame(feature)
+        df_result['cut'] = 0
+
+        num_up = 0
+        num_down = 0
+        for sigma in cut_sigmas:
+
+            if window == 0:
+                feature_mean = feature.mean()
+                feature_edge = feature.std() * sigma
+                df_result['cut_ref_up'] = feature_mean + feature_edge
+                df_result['cut_ref_down'] = feature_mean - feature_edge  # 可为负
+
+            else:
+                df_result['data_mean'] = df_result['data'].rolling(window).mean().fillna(method='bfill')
+                df_result['sigma_value'] = df_result['data'].rolling(window).std().fillna(method='bfill') * sigma
+                df_result['cut_ref_up'] = df_result['data_mean'] + df_result['sigma_value']
+                df_result['cut_ref_down'] = df_result['data_mean'] - df_result['sigma_value']
+
+            df_result['cut'][df_result['data'] > df_result['cut_ref_up']] = num_up + 1
+            df_result['cut'][df_result['data'] < df_result['cut_ref_down']] = num_down - 1
+
+            num_up += 1
+            num_down -= 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['cut']
+
+
+    # 合并 pos_should 信号的相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def sig_merge(*signals):
         """Merge signals(pos_should) Series into a DataFrame
 
@@ -366,7 +478,6 @@ class Tools(object):
 
         return result_sig
 
-
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -449,6 +560,324 @@ class Tools(object):
         return df_sig['result_sig']
 
 
+    # 数据准备相关函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_csv_names(file_path, start_date=None, end_date=None, cat='BITMEX.trade'):
+        """To get all target file names. Date range support only for bitmex TRADE csv, for now
+
+        @param file_path: path that contains all the csv files(each day, no break)
+        @param start_date: str, format: '20150925'
+        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
+        @param cat: exchange.csv_type
+        @return: file names list
+        """
+
+        file_list = sorted(os.listdir(file_path))
+        for x in file_list.copy():
+            if x[-4:] != '.csv':
+                file_list.remove(x)
+
+        if not cat[:6] == 'BITMEX':
+            return file_list
+
+        if start_date:
+            if pd.to_datetime(file_list[0][6:-4]) < pd.to_datetime(start_date):
+                while len(file_list) > 0:
+                    if file_list[0][6:-4] == start_date:
+                        break
+                    file_list.pop(0)
+        if end_date:
+            if pd.to_datetime(file_list[-1][6:-4]) > pd.to_datetime(end_date):
+                while len(file_list) > 0:
+                    if file_list[-1][6:-4] == end_date:
+                        file_list.pop(-1)  # end date is not included
+                        break
+                    file_list.pop(-1)
+
+        return file_list
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def bitmex_time_format_change(bitmex_time):
+        """Change the unfriendly bitmex time format!
+
+        @param bitmex_time: original timestamp Series from bitmex trade/quote data
+        @return: datetime64 timestamp Series.
+        """
+
+        bitmex_time = bitmex_time.str[:10] + ' ' + bitmex_time.str[11:]  # change the unfriendly time format!
+        timestamp_series = pd.to_datetime(bitmex_time)
+
+        return timestamp_series
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_kbar(df_kbar=pd.DataFrame(), data_path=None, unit='5t'):
+        """To get the K price DataFrame from a smaller unit K price csv.
+
+        @param df_kbar: a smaller unit K price DataFrame
+        @param data_path: a smaller unit K price csv
+        @param unit: pd.groupby() unit
+        @return: kbar DataFrame
+        """
+
+        if not df_kbar.empty:
+            if df_kbar.index.name == 'timestamp':
+                df_kbar.reset_index(inplace=True)
+        else:
+            if data_path:
+                df_kbar = pd.read_csv(data_path)
+            else:
+                print('Either df_kbar or data_path is required.')
+                return
+
+        df_kbar['timestamp'] = pd.to_datetime(df_kbar.timestamp)
+        df = df_kbar.groupby(pd.Grouper(key='timestamp', freq=unit)).agg({'price_start': 'first',
+                                                                          'price_end': 'last',
+                                                                          'price_max': 'max',
+                                                                          'price_min': 'min',
+                                                                          'volume': 'sum',
+                                                                          'ticks': 'sum'
+                                                                          })
+
+        return df
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_kbar_from_tick(file_path_trade, file_path_quote, unit, to_path=None, to_name=None, start_date=None,
+                           end_date=None, exchange='BITMEX', symbol='XBTUSD'):
+        """To get the K price DataFrame from tick price. Bitmex only. NO more than 1 day
+
+        @param file_path_trade: path that contains the trade csv files(fromt bitmex)
+        @param file_path_quote: path that contains the quote csv files(fromt bitmex)
+        @param unit: compress unit: example: '30s', 't', '15t', 'h', 'd'. No more than 1 Day.
+        @param to_path: path to save kbar csv file
+        @param to_name: csv file name
+        @param start_date: str, format: '20150925'
+        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
+        @param exchange: exchange
+        @param symbol: symbol
+        @return: compressed tick price DataFrame with columns:
+            timestamp  --note that it's the period start timestamp
+            price_start
+            price_end
+            price_max
+            price_min
+        """
+
+        if not exchange == 'BITMEX':
+            return
+
+        t0 = time.time()
+
+        # Two process for two data source
+        df_kbar, df_ticks = Tools.agg_cal(Tools.compress_distribute,
+                                          ('trade', file_path_trade, unit, start_date, end_date, symbol),
+                                          ('quote', file_path_quote, unit, start_date, end_date, symbol),
+                                          process_num=2)  # 我承认这种传参方式很奇葩。。。
+
+        df_kbar = pd.concat([df_kbar, df_ticks], axis=1, sort=False)
+        df_kbar.rename({'symbol': 'ticks'}, axis=1, inplace=True)
+
+        print('%.3f | kbar generated successfully.' % (time.time() - t0))
+
+        if to_path and to_name:
+            df_kbar.to_csv('%s/%s.csv' % (to_path, to_name))
+            print('%.3f | "%s" saved successfully to "%s".' % ((time.time() - t0), to_name, to_path))
+
+        return df_kbar
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def compress_trade(file_path_trade, unit, start_date, end_date, symbol):
+        """trade csv dealing: get basic price info"""
+
+        list_kbar = []
+        t0 = time.time()
+
+        file_list_trade = Tools.get_csv_names(file_path_trade, start_date=start_date, end_date=end_date, cat='BITMEX.trade')
+        for file in file_list_trade:
+
+            df_new = pd.read_csv('%s/%s' % (file_path_trade, file),
+                                 usecols=['timestamp', 'symbol', 'side', 'size', 'price'])
+            if symbol not in list(df_new['symbol']):
+                continue
+            df_new = df_new[df_new.symbol == symbol]
+            df_new.reset_index(drop=True, inplace=True)
+
+            df_new['timestamp'] = Tools.bitmex_time_format_change(df_new['timestamp'])
+            group_price = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit))).price
+            price_start = group_price.first()
+            price_end = group_price.last()
+            price_max = group_price.max()
+            price_min = group_price.min()
+            volume = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit)))['size'].sum()
+
+            df_g = pd.DataFrame(price_start)
+            df_g.rename({'price': 'price_start'}, axis=1, inplace=True)
+            df_g['price_end'] = price_end
+            df_g['price_max'] = price_max
+            df_g['price_min'] = price_min
+            df_g['volume'] = volume
+
+            list_kbar.append(df_g)
+
+            print('%.3f | "%s" included.' % ((time.time() - t0), file))
+
+        df_kbar = pd.concat(list_kbar, sort=False, ignore_index=False)
+
+        return df_kbar
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def compress_quote(file_path_quote, unit, start_date, end_date, symbol):
+        """quote csv dealing: get ticks count for each line(for flipage estimation)"""
+
+        list_ticks = []
+        t0 = time.time()
+
+        file_list_quote = Tools.get_csv_names(file_path_quote, start_date=start_date, end_date=end_date, cat='BITMEX.quote')
+        for file in file_list_quote:
+
+            df_new = pd.read_csv('%s/%s' % (file_path_quote, file),
+                                 usecols=['timestamp', 'symbol'])
+            if symbol not in list(df_new['symbol']):
+                continue
+            df_new = df_new[df_new.symbol == symbol]
+            df_new.reset_index(drop=True, inplace=True)
+
+            df_new['timestamp'] = Tools.bitmex_time_format_change(df_new['timestamp'])
+            ticks = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit))).symbol.count()
+            df_ticks = pd.DataFrame(ticks)
+            list_ticks.append(df_ticks)
+
+            print('%.3f | "%s" ticks counted.' % ((time.time() - t0), file))
+
+        df_ticks = pd.concat(list_ticks, sort=False, ignore_index=False)
+
+        return df_ticks
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def compress_distribute(direct_to, file_path, unit, start_date, end_date, symbol):
+        result = None
+        if direct_to == 'trade':
+            result = Tools.compress_trade(file_path, unit, start_date, end_date, symbol)
+        elif direct_to == 'quote':
+            result = Tools.compress_quote(file_path, unit, start_date, end_date, symbol)
+
+        return result
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def tick_comp_price(file_path, start_date=None, end_date=None):
+        """Get the compressed traded tick price from file_path.
+
+        @param file_path: path that contains all the csv files(each day, no break) with columns:
+            timestamp
+            price
+        @param start_date: str, format: '20150925'
+        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
+        @param exchange: support only bitmex, for now
+        @return: compressed tick price DataFrame with columns:
+            timestamp
+            price
+        """
+
+        # get all target file names
+        file_list = Tools.get_csv_names(file_path, start_date=start_date, end_date=end_date)
+
+        list_df = []
+        for file in file_list:
+            df_add = pd.read_csv('%s/%s' % (file_path, file))
+            list_df.append(df_add)
+
+        df_tick_comp_price = pd.concat(list_df, ignore_index=True, sort=False)
+
+        return df_tick_comp_price
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_tick_comp_price(file_path, to_path=None, start_date=None, end_date=None, exchange='BITMEX',
+                            symbol='XBTUSD'):
+        """To get the compressed traded tick price from raw trade data in file_path.
+
+        @param file_path: path that contains all the raw trade csv files(support bitmex only, for now).
+        @param to_path: path to save csv file. None for not saving.
+        @param start_date: str, format: '20150925'
+        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
+        @param exchange: support bitmex only, for now.
+        @param symbol: trading target
+        @return: compressed tick price DataFrame with columns:
+            timestamp
+            price
+        """
+
+        if not exchange == 'BITMEX':
+            return
+
+        # close SettingWithCopyWarning
+        pd.set_option('mode.chained_assignment', None)
+
+        t0 = time.time()
+
+        list_tick_comp_price = []
+
+        # get all target file names
+        file_list = Tools.get_csv_names(file_path, start_date=start_date, end_date=end_date)
+
+        # read and compress all the files in file_path
+        for file in file_list:
+
+            df = pd.read_csv('%s/%s' % (file_path, file), usecols=['timestamp', 'symbol', 'price', 'tickDirection'])
+            if symbol not in list(df['symbol']):
+                continue
+
+            df = df[df.symbol == symbol]
+            df.reset_index(inplace=True, drop=True)
+            df['timestamp'] = Tools.bitmex_time_format_change(df['timestamp'])
+            df = df[
+                (df.tickDirection == 'PlusTick') | (
+                            df.tickDirection == 'MinusTick')]  # keep only lines that price changed
+
+            # 仅保留同方向连续吃两笔以上的tick --因为后续 limit order 成交的判断依据是：越过limit价格
+            df['tickDirection_old'] = np.append(np.nan, df['tickDirection'][:-1])
+            df['keep'] = 1
+            df['keep'][df.tickDirection != df.tickDirection_old] = 0
+            df.iloc[0, -1] = 1  # keep first line
+            df = df[df['keep'] == 1]
+
+            df.drop(['symbol', 'tickDirection', 'tickDirection_old', 'keep'], axis=1, inplace=True)
+
+            list_tick_comp_price.append(df)
+            print('%.3f | file "%s" included.' % ((time.time() - t0), file))
+
+            # save csv files to to_path(folder)
+            if to_path:
+                df.to_csv(('%s/%s' % (to_path, file)), index=False)  # the same file name.
+                print('%.3f | file "%s" saved to "%s".' % ((time.time() - t0), file, to_path))
+
+        df_tick_comp_price = pd.concat(list_tick_comp_price)
+        df_tick_comp_price.reset_index(drop=True, inplace=True)
+
+        print('%.3f | trade tick price compressed successfully.' % (time.time() - t0))
+
+        # reopen SettingWithCopyWarning
+        pd.set_option('mode.chained_assignment', 'warn')
+
+        return df_tick_comp_price
+
+    # 回测过程相关函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -847,13 +1276,6 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def str_time():
-        now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))
-        return now
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
     def get_score(trading_record, df_kbar, capital=CAPITAL, annual_period=ANNUAL_PERIOD, save_file=None):
         """Get performance from trading records and prices.
 
@@ -1104,321 +1526,6 @@ class Tools(object):
 
         return dict_score
 
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def get_csv_names(file_path, start_date=None, end_date=None, cat='BITMEX.trade'):
-        """To get all target file names. Date range support only for bitmex TRADE csv, for now
-
-        @param file_path: path that contains all the csv files(each day, no break)
-        @param start_date: str, format: '20150925'
-        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
-        @param cat: exchange.csv_type
-        @return: file names list
-        """
-
-        file_list = sorted(os.listdir(file_path))
-        for x in file_list.copy():
-            if x[-4:] != '.csv':
-                file_list.remove(x)
-
-        if not cat[:6] == 'BITMEX':
-            return file_list
-
-        if start_date:
-            if pd.to_datetime(file_list[0][6:-4]) < pd.to_datetime(start_date):
-                while len(file_list) > 0:
-                    if file_list[0][6:-4] == start_date:
-                        break
-                    file_list.pop(0)
-        if end_date:
-            if pd.to_datetime(file_list[-1][6:-4]) > pd.to_datetime(end_date):
-                while len(file_list) > 0:
-                    if file_list[-1][6:-4] == end_date:
-                        file_list.pop(-1)  # end date is not included
-                        break
-                    file_list.pop(-1)
-
-        return file_list
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def bitmex_time_format_change(bitmex_time):
-        """Change the unfriendly bitmex time format!
-
-        @param bitmex_time: original timestamp Series from bitmex trade/quote data
-        @return: datetime64 timestamp Series.
-        """
-
-        bitmex_time = bitmex_time.str[:10] + ' ' + bitmex_time.str[11:]  # change the unfriendly time format!
-        timestamp_series = pd.to_datetime(bitmex_time)
-
-        return timestamp_series
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def get_kbar(df_kbar=pd.DataFrame(), data_path=None, unit='5t'):
-        """To get the K price DataFrame from a smaller unit K price csv.
-
-        @param df_kbar: a smaller unit K price DataFrame
-        @param data_path: a smaller unit K price csv
-        @param unit: pd.groupby() unit
-        @return: kbar DataFrame
-        """
-
-        if not df_kbar.empty:
-            if df_kbar.index.name == 'timestamp':
-                df_kbar.reset_index(inplace=True)
-        else:
-            if data_path:
-                df_kbar = pd.read_csv(data_path)
-            else:
-                print('Either df_kbar or data_path is required.')
-                return
-
-        df_kbar['timestamp'] = pd.to_datetime(df_kbar.timestamp)
-        df = df_kbar.groupby(pd.Grouper(key='timestamp', freq=unit)).agg({'price_start': 'first',
-                                                                          'price_end': 'last',
-                                                                          'price_max': 'max',
-                                                                          'price_min': 'min',
-                                                                          'volume': 'sum',
-                                                                          'ticks': 'sum'
-                                                                          })
-
-        return df
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def get_kbar_from_tick(file_path_trade, file_path_quote, unit, to_path=None, to_name=None, start_date=None,
-                           end_date=None, exchange='BITMEX', symbol='XBTUSD'):
-        """To get the K price DataFrame from tick price. Bitmex only. NO more than 1 day
-
-        @param file_path_trade: path that contains the trade csv files(fromt bitmex)
-        @param file_path_quote: path that contains the quote csv files(fromt bitmex)
-        @param unit: compress unit: example: '30s', 't', '15t', 'h', 'd'. No more than 1 Day.
-        @param to_path: path to save kbar csv file
-        @param to_name: csv file name
-        @param start_date: str, format: '20150925'
-        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
-        @param exchange: exchange
-        @param symbol: symbol
-        @return: compressed tick price DataFrame with columns:
-            timestamp  --note that it's the period start timestamp
-            price_start
-            price_end
-            price_max
-            price_min
-        """
-
-        if not exchange == 'BITMEX':
-            return
-
-        t0 = time.time()
-
-        # Two process for two data source
-        df_kbar, df_ticks = Tools.agg_cal(Tools.compress_distribute,
-                                          ('trade', file_path_trade, unit, start_date, end_date, symbol),
-                                          ('quote', file_path_quote, unit, start_date, end_date, symbol),
-                                          process_num=2)  # 我承认这种传参方式很奇葩。。。
-
-        df_kbar = pd.concat([df_kbar, df_ticks], axis=1, sort=False)
-        df_kbar.rename({'symbol': 'ticks'}, axis=1, inplace=True)
-
-        print('%.3f | kbar generated successfully.' % (time.time() - t0))
-
-        if to_path and to_name:
-            df_kbar.to_csv('%s/%s.csv' % (to_path, to_name))
-            print('%.3f | "%s" saved successfully to "%s".' % ((time.time() - t0), to_name, to_path))
-
-        return df_kbar
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def compress_trade(file_path_trade, unit, start_date, end_date, symbol):
-        """trade csv dealing: get basic price info"""
-
-        list_kbar = []
-        t0 = time.time()
-
-        file_list_trade = Tools.get_csv_names(file_path_trade, start_date=start_date, end_date=end_date, cat='BITMEX.trade')
-        for file in file_list_trade:
-
-            df_new = pd.read_csv('%s/%s' % (file_path_trade, file),
-                                 usecols=['timestamp', 'symbol', 'side', 'size', 'price'])
-            if symbol not in list(df_new['symbol']):
-                continue
-            df_new = df_new[df_new.symbol == symbol]
-            df_new.reset_index(drop=True, inplace=True)
-
-            df_new['timestamp'] = Tools.bitmex_time_format_change(df_new['timestamp'])
-            group_price = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit))).price
-            price_start = group_price.first()
-            price_end = group_price.last()
-            price_max = group_price.max()
-            price_min = group_price.min()
-            volume = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit)))['size'].sum()
-
-            df_g = pd.DataFrame(price_start)
-            df_g.rename({'price': 'price_start'}, axis=1, inplace=True)
-            df_g['price_end'] = price_end
-            df_g['price_max'] = price_max
-            df_g['price_min'] = price_min
-            df_g['volume'] = volume
-
-            list_kbar.append(df_g)
-
-            print('%.3f | "%s" included.' % ((time.time() - t0), file))
-
-        df_kbar = pd.concat(list_kbar, sort=False, ignore_index=False)
-
-        return df_kbar
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def compress_quote(file_path_quote, unit, start_date, end_date, symbol):
-        """quote csv dealing: get ticks count for each line(for flipage estimation)"""
-
-        list_ticks = []
-        t0 = time.time()
-
-        file_list_quote = Tools.get_csv_names(file_path_quote, start_date=start_date, end_date=end_date, cat='BITMEX.quote')
-        for file in file_list_quote:
-
-            df_new = pd.read_csv('%s/%s' % (file_path_quote, file),
-                                 usecols=['timestamp', 'symbol'])
-            if symbol not in list(df_new['symbol']):
-                continue
-            df_new = df_new[df_new.symbol == symbol]
-            df_new.reset_index(drop=True, inplace=True)
-
-            df_new['timestamp'] = Tools.bitmex_time_format_change(df_new['timestamp'])
-            ticks = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit))).symbol.count()
-            df_ticks = pd.DataFrame(ticks)
-            list_ticks.append(df_ticks)
-
-            print('%.3f | "%s" ticks counted.' % ((time.time() - t0), file))
-
-        df_ticks = pd.concat(list_ticks, sort=False, ignore_index=False)
-
-        return df_ticks
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def compress_distribute(direct_to, file_path, unit, start_date, end_date, symbol):
-        result = None
-        if direct_to == 'trade':
-            result = Tools.compress_trade(file_path, unit, start_date, end_date, symbol)
-        elif direct_to == 'quote':
-            result = Tools.compress_quote(file_path, unit, start_date, end_date, symbol)
-
-        return result
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def tick_comp_price(file_path, start_date=None, end_date=None):
-        """Get the compressed traded tick price from file_path.
-
-        @param file_path: path that contains all the csv files(each day, no break) with columns:
-            timestamp
-            price
-        @param start_date: str, format: '20150925'
-        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
-        @param exchange: support only bitmex, for now
-        @return: compressed tick price DataFrame with columns:
-            timestamp
-            price
-        """
-
-        # get all target file names
-        file_list = Tools.get_csv_names(file_path, start_date=start_date, end_date=end_date)
-
-        list_df = []
-        for file in file_list:
-            df_add = pd.read_csv('%s/%s' % (file_path, file))
-            list_df.append(df_add)
-
-        df_tick_comp_price = pd.concat(list_df, ignore_index=True, sort=False)
-
-        return df_tick_comp_price
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def get_tick_comp_price(file_path, to_path=None, start_date=None, end_date=None, exchange='BITMEX',
-                            symbol='XBTUSD'):
-        """To get the compressed traded tick price from raw trade data in file_path.
-
-        @param file_path: path that contains all the raw trade csv files(support bitmex only, for now).
-        @param to_path: path to save csv file. None for not saving.
-        @param start_date: str, format: '20150925'
-        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
-        @param exchange: support bitmex only, for now.
-        @param symbol: trading target
-        @return: compressed tick price DataFrame with columns:
-            timestamp
-            price
-        """
-
-        if not exchange == 'BITMEX':
-            return
-
-        # close SettingWithCopyWarning
-        pd.set_option('mode.chained_assignment', None)
-
-        t0 = time.time()
-
-        list_tick_comp_price = []
-
-        # get all target file names
-        file_list = Tools.get_csv_names(file_path, start_date=start_date, end_date=end_date)
-
-        # read and compress all the files in file_path
-        for file in file_list:
-
-            df = pd.read_csv('%s/%s' % (file_path, file), usecols=['timestamp', 'symbol', 'price', 'tickDirection'])
-            if symbol not in list(df['symbol']):
-                continue
-
-            df = df[df.symbol == symbol]
-            df.reset_index(inplace=True, drop=True)
-            df['timestamp'] = Tools.bitmex_time_format_change(df['timestamp'])
-            df = df[
-                (df.tickDirection == 'PlusTick') | (
-                            df.tickDirection == 'MinusTick')]  # keep only lines that price changed
-
-            # 仅保留同方向连续吃两笔以上的tick --因为后续 limit order 成交的判断依据是：越过limit价格
-            df['tickDirection_old'] = np.append(np.nan, df['tickDirection'][:-1])
-            df['keep'] = 1
-            df['keep'][df.tickDirection != df.tickDirection_old] = 0
-            df.iloc[0, -1] = 1  # keep first line
-            df = df[df['keep'] == 1]
-
-            df.drop(['symbol', 'tickDirection', 'tickDirection_old', 'keep'], axis=1, inplace=True)
-
-            list_tick_comp_price.append(df)
-            print('%.3f | file "%s" included.' % ((time.time() - t0), file))
-
-            # save csv files to to_path(folder)
-            if to_path:
-                df.to_csv(('%s/%s' % (to_path, file)), index=False)  # the same file name.
-                print('%.3f | file "%s" saved to "%s".' % ((time.time() - t0), file, to_path))
-
-        df_tick_comp_price = pd.concat(list_tick_comp_price)
-        df_tick_comp_price.reset_index(drop=True, inplace=True)
-
-        print('%.3f | trade tick price compressed successfully.' % (time.time() - t0))
-
-        # reopen SettingWithCopyWarning
-        pd.set_option('mode.chained_assignment', 'warn')
-
-        return df_tick_comp_price
 
 
 if __name__ == '__main__':
