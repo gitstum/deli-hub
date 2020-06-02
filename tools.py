@@ -74,6 +74,7 @@ class Tools(object):
         df_result = pd.DataFrame(feature)
         df_result['cut'] = 0
 
+        cut_points = sorted(cut_points)  # NOTE it's sorted!
         for num in list(range(len(cut_points))):
             df_result['cut'][df_result['data'] >= cut_points[num]] = num + 1
 
@@ -82,8 +83,45 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def cut_distance(feature, *cut_points, window=0):
+        """特征分类函数，自切割，数值线性比例切割  (缺点在于不适应长尾，步长设置困难)
+
+        :param feature: feature Series (timestamp index) to be cut
+        :param window: rolling window for range reference
+        :param cut_points: where of the whole distance(min-max) to cut feature , 0-1
+        :return: cut result: 0, 1, 2 ...
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        feature.name = 'data'
+        df_result = pd.DataFrame(feature)
+        df_result['cut'] = 0
+
+        num = 0
+        cut_points = sorted(cut_points)  # NOTE
+        for point in cut_points:
+
+            if window == 0:
+                df_result['cut_ref'] = df_result['data'].min() + (
+                            df_result['data'].max() - df_result['data'].min()) * point
+            else:
+                df_result['max_ref'] = df_result['data'].rolling(window).max().fillna(method='bfill')
+                df_result['min_ref'] = df_result['data'].rolling(window).min().fillna(method='bfill')
+                df_result['cut_ref'] = df_result['min_ref'] + (df_result['max_ref'] - df_result['min_ref']) * point
+
+            df_result['cut'][df_result['data'] > df_result['cut_ref']] = num + 1
+            num += 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['cut']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def cut_rank(feature, *cut_percents, window=0):
-        """特征分类函数，自切割，分布比例切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
+        """特征分类函数，自切割，分布数量比例切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
 
         :param feature: feature Series (timestamp index) to be cut
         :param window: rolling window for range reference
@@ -98,6 +136,7 @@ class Tools(object):
         df_result['cut'] = 0
 
         num = 0
+        cut_percents = sorted(cut_percents)  # NOTE
         for percent in cut_percents:
 
             if window == 0:
@@ -116,12 +155,12 @@ class Tools(object):
 
     @staticmethod
     def cut_sigma(feature, *cut_sigmas, window=0):
-        """特征分类函数，自切割，分布倍数切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
+        """特征分类函数，自切割，分布标准倍数切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
 
         :param feature: feature Series (timestamp index) to be cut
         :param window: rolling window for range reference
         :param cut_sigmas: float(0-1) of sigma to cut features apart
-        :return: cut result: -2, -1, 0, 1, 2, 3...
+        :return: cut result: -2, -1, 0, 1, 2, 3...  (NOTE negative results here)
 
         NOTE: support negative-positive, positive-only and negative-only feature (但是外部的映射字典不要弄错)
         """
@@ -134,6 +173,7 @@ class Tools(object):
 
         num_up = 0
         num_down = 0
+        cut_sigmas = sorted(cut_sigmas)  # NOTE
         for sigma in cut_sigmas:
 
             if window == 0:
