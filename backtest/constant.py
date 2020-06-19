@@ -2,6 +2,7 @@
 
 from enum import Enum
 import numpy as np
+import string
 
 
 class Direction(Enum):
@@ -86,6 +87,9 @@ POS_START = 0
 # Default distance(to tick price) for limit order
 LIMIT_DISTANCE = 0.5  # the bigger the safer but harder to get traded
 
+# Node name order in node map
+NODE_NAME_LIST = sorted(list(string.ascii_letters))  # ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
+
 
 # ---------------------------------------------------------------------------------------------------------
 
@@ -145,6 +149,8 @@ class Classifier(Enum):
                  'compare_distance',  # 比较feature差值，绝对距离（比大小：距离为0）
                  'compare_sigma'  # 比较feature差值，平均标准差比例（比大小：比例为0）
                  ]
+
+
 
 
 
