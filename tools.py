@@ -36,7 +36,7 @@ class Tools(object):
             pool = mp.Pool(processes=process_num)
 
         for i in args:
-            tag = pool.apply_async(func, i)  # i must be tuple
+            tag = pool.apply_async(func, i)  # note i must be tuple
             result_tags.append(tag)
 
         pool.close()
@@ -51,22 +51,102 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def str_time():
-        """获取str时间信息"""
+    def str_time(f=6):
+        """获取str时间信息。f: 保留几位小数。"""
 
-        now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))
+        if f == 0: f = -1
+        f -= 6
+        if f > 0: f = 0
+
+        if f == 0:
+            now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))
+        else:
+            now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))[:f]
+
         return now
 
     # 分类序列生成函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def cut_number(feature, *cut_points):
+    def compare_distance(feature1, feature2, *sub_edge, window=0):
+        """特征分类函数，差值对比，绝对距离（比大小：距离为0）  (缺点在于步长个性化太强，需要单独设置参数)
+
+        @param feature1:
+        @param feature2:
+        @param sub_edge: the value which differs the subtract result
+        @param window: unfunctional here.
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        feature1.name = 'feature1'
+        feature2.name = 'feature2'
+        sub_edge = sorted(sub_edge)
+
+        df_result = Tools.sig_merge(feature1, feature2)  # nan filled.
+        df_result['difference'] = df_result['feature1'] - df_result['feature2']
+
+        df_result['diff_tag'] = 0
+        for num in list(range(len(sub_edge))):
+            df_result['diff_tag'][df_result['difference'] >= sub_edge[num]] = num + 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['diff_tag']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def compare_sigma(feature1, feature2, *sigma_edge, window=0):
+        """特征分类函数，差值对比，平均标准差比例对比（比大小：比例为0）
+
+        @param feature1:
+        @param feature2:
+        @param sigma_edge: the sigma value which differs the subtract result (NOTE: negative for feature1 < feature2!)
+        @param window: unfunctional here.
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        feature1.name = 'feature1'
+        feature2.name = 'feature2'
+        sigma_edge = sorted(sigma_edge)
+
+        df_result = Tools.sig_merge(feature1, feature2)  # nan filled.
+        df_result['difference'] = df_result['feature1'] - df_result['feature2']
+
+        if window == 0:
+            sigma = (feature1.std() + feature2.std()) / 2
+            df_result['sigma'] = sigma
+        else:
+            sigma1 = feature1.rolling(window).std().fillna(method='bfill')
+            sigma2 = feature2.rolling(window).std().fillna(method='bfill')
+            sigma1.name = 'sigma1'
+            sigma2.name = 'sigma2'
+            df_sigma = Tools.sig_merge(sigma1, sigma2)  # nan filled.
+            df_result['sigma'] = (df_sigma['sigma1'] + df_sigma['sigma2']) / 2
+
+        df_result['sigma_ratio'] = df_result['difference'] / df_result['sigma']
+
+        df_result['diff_tag'] = 0
+        for num in list(range(len(sigma_edge))):
+            df_result['diff_tag'][df_result['sigma_ratio'] >= sigma_edge[num]] = num + 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cut_number(feature, *cut_points, window=0):
         """特征分类函数，自切割，常量切割  (缺点在于步长个性化太强，需要单独设置参数)
 
-        :param feature: feature Series (timestamp index) to be cut
-        :param cut_points: constant values to cut feature
-        :return: cut result: 0, 1, 2 ...
+        @param feature: feature Series (timestamp index) to be cut
+        @param cut_points: constant values to cut feature
+        @param window: unfunctional.
+        @return: cut result: 0, 1, 2 ...
         """
 
         feature.name = 'data'
@@ -86,10 +166,10 @@ class Tools(object):
     def cut_distance(feature, *cut_points, window=0):
         """特征分类函数，自切割，数值线性比例切割  (缺点在于不适应长尾，步长设置困难)
 
-        :param feature: feature Series (timestamp index) to be cut
-        :param window: rolling window for range reference
-        :param cut_points: where of the whole distance(min-max) to cut feature , 0-1
-        :return: cut result: 0, 1, 2 ...
+        @param feature: feature Series (timestamp index) to be cut
+        @param window: rolling window for range reference
+        @param cut_points: where of the whole distance(min-max) to cut feature , 0-1
+        @return: cut result: 0, 1, 2 ...
         """
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
@@ -123,10 +203,10 @@ class Tools(object):
     def cut_rank(feature, *cut_percents, window=0):
         """特征分类函数，自切割，分布数量比例切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
 
-        :param feature: feature Series (timestamp index) to be cut
-        :param window: rolling window for range reference
-        :param cut_percents: percent in float(0-1) to cut features apart
-        :return: cut result: 0, 1, 2 ...
+        @param feature: feature Series (timestamp index) to be cut
+        @param window: rolling window for range reference
+        @param cut_percents: percent in float(0-1) to cut features apart
+        @return: cut result: 0, 1, 2 ...
         """
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
@@ -157,10 +237,10 @@ class Tools(object):
     def cut_sigma(feature, *cut_sigmas, window=0):
         """特征分类函数，自切割，分布标准倍数切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
 
-        :param feature: feature Series (timestamp index) to be cut
-        :param window: rolling window for range reference
-        :param cut_sigmas: float(0-1) of sigma to cut features apart
-        :return: cut result: -2, -1, 0, 1, 2, 3...  (NOTE negative results here)
+        @param feature: feature Series (timestamp index) to be cut
+        @param window: rolling window for range reference
+        @param cut_sigmas: float(0-1) of sigma to cut features apart
+        @return: cut result: -2, -1, 0, 1, 2, 3...  (NOTE negative results here)
 
         NOTE: support negative-positive, positive-only and negative-only feature (但是外部的映射字典不要弄错)
         """
@@ -199,6 +279,54 @@ class Tools(object):
         return df_result['cut']
 
 
+    # 条件函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cond_1(cond, pos_should):
+        """CONDITION method: 0/1 condition
+        ---在满足a(0/1)条件(1)的条件下，使用b的pos_should，其余0 【限2列】
+
+        @param cond: condition to accept pos_should
+        @param pos_should: pos_should signals Series (weighted)
+        @return: pos_should signal
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        cond.name = 'condition'
+        pos_should.name = 'signal'
+
+        df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
+        df_sig['result_sig'] = df_sig['signal']
+        df_sig['result_sig'][df_sig['condition'] <= 0] = 0
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_sig['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cond_2(cond, pos_should):
+        """CONDITION method: -1/0/1 condition
+        ---在满足cond方向（正负，对比0）的条件下，pos_should如同方向（正负），使用其值，其余为0 【限2列】
+
+        @param cond: condition to accept pos_should
+        @param pos_should: pos_should signals Series (weighted)
+        @return: pos_should signal
+        """
+
+        df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
+
+        df_sig['result_ref'] = df_sig.iloc[:, 0] * df_sig.iloc[:, 1]
+        df_sig['result_sig'] = df_sig.iloc[:, 1][df_sig['result_ref'] > 0]
+
+        result_sig = df_sig['result_sig'].fillna(0)
+
+        return result_sig
+
+
     # 合并 pos_should 信号的相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -206,13 +334,13 @@ class Tools(object):
     def sig_merge(*signals):
         """Merge signals(pos_should) Series into a DataFrame
 
-        :param signals: signals Series
+        @param signals: signals Series
             index: timestamp
             value: pos_should signal
-        :return:
+        @return:
         """
 
-        print(signals)
+        # print(signals)
 
         list_series = []
         for s in signals:
@@ -221,9 +349,9 @@ class Tools(object):
         df_sig = pd.concat(list_series, axis=1, sort=False).fillna(method='ffill')
 
         # dev
-        print('sig_merge()   -----------------------')
-        print(type(df_sig))
-        print(df_sig)
+        # print('sig_merge()   -----------------------')
+        # print(type(df_sig))
+        # print(df_sig)
 
         return df_sig
 
@@ -233,11 +361,11 @@ class Tools(object):
     def sig_weight(signal, weight):
         """Return a weighted pos_should signal Series.
 
-        :param signal: a signal Series
+        @param signal: a signal Series
             index: timestamp
             value: pos_should signal
-        :param weight: weight of the signal
-        :return: weighted pos_should signal Series
+        @param weight: weight of the signal
+        @return: weighted pos_should signal Series
         """
 
         return signal * weight
@@ -248,9 +376,9 @@ class Tools(object):
     def sig_to_one(method, *signals):
         """分流函数
 
-        :param method: method for merging signals into one
-        :param signals: pos_should signals Series(weighted)f
-        :return: pos_should signal
+        @param method: method for merging signals into one
+        @param signals: pos_should signals Series(weighted)f
+        @return: pos_should signal
         """
 
         if not method in Method.ALL.value:
@@ -275,8 +403,8 @@ class Tools(object):
         elif method == 'comb_min':
             return Tools.comb_min(*signals)
 
-        elif method == 'perm_cond':
-            return Tools.perm_cond(*signals)
+        # elif method == 'cond_2':
+        #     return Tools.cond_2(*signals)
         elif method == 'perm_add':
             return Tools.perm_add(*signals)
         elif method == 'perm_sub':
@@ -297,8 +425,8 @@ class Tools(object):
         """Pos_should signal merge method: comb_sum1  
         ---对各列signal进行加和
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal
+        @param signals: pos_should signals Series (weighted)
+        @return: pos_should signal
         """
 
         df_sig = Tools.sig_merge(*signals)
@@ -314,8 +442,8 @@ class Tools(object):
         """Pos_should signal merge method: comb_vote1  
         ---使用各列signal投票，加和，输出为：-1/0/1
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal  -- -1/0/1
+        @param signals: pos_should signals Series (weighted)
+        @return: pos_should signal  -- -1/0/1
         """
 
         result_ref = Tools.comb_sum(*signals)  # NOTE this depends on comb_sum1()
@@ -336,8 +464,8 @@ class Tools(object):
         """Pos_should signal merge method: comb_vote2  
         ---使用各列signal投票，须无反对票，输出为：-1/0/1
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal  -- -1/0/1
+        @param signals: pos_should signals Series (weighted)
+        @return: pos_should signal  -- -1/0/1
         """
 
         df_sig = Tools.sig_merge(*signals)
@@ -360,8 +488,8 @@ class Tools(object):
         """Pos_should signal merge method: comb_vote3  
         ---使用各列signal投票，须全票通过，输出为：-1/0/1
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal  -- -1/0/1
+        @param signals: pos_should signals Series (weighted)
+        @return: pos_should signal  -- -1/0/1
         """
 
         df_sig = Tools.sig_merge(*signals)
@@ -384,8 +512,8 @@ class Tools(object):
         """Pos_should signal merge method: comb_min
         ---多/空方向：取各列signal中最小/最大的，以做多/空。如sig含有相反符号，则返回0（可用于判断）
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal
+        @param signals: pos_should signals Series (weighted)
+        @return: pos_should signal
         """
 
         df_sig = Tools.sig_merge(*signals)
@@ -401,26 +529,6 @@ class Tools(object):
 
         return df_result['result_sig']
 
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def perm_cond(cond, pos_should):
-        """Pos_should signal method: permutation condition
-        ---在满足cond方向（正负，对比0）的条件下，pos_should如同方向（正负），使用其值，其余为0 【限2列】
-
-        :param cond: condition to accept pos_should
-        :param pos_should: pos_should signals Series (weighted)
-        :return: pos_should signal
-        """
-
-        df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
-
-        df_sig['result_ref'] = df_sig.iloc[:, 0] * df_sig.iloc[:, 1]
-        df_sig['result_sig'] = df_sig.iloc[:, 1][df_sig['result_ref'] > 0]
-
-        result_sig = df_sig['result_sig'].fillna(0)
-
-        return result_sig
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -428,8 +536,8 @@ class Tools(object):
     def sig_trend(*signals):
         """Compare each Series line by line
 
-        :param signals: Series
-        :return: DataFrame
+        @param signals: Series
+        @return: DataFrame
         """
         df_sig = Tools.sig_merge(*signals)
 
@@ -465,8 +573,8 @@ class Tools(object):
     def sig_one_direction(*signals):
         """Check each df line to see if values (in each signal) goes straight or not
 
-        :param signals: Series
-        :return: one Series
+        @param signals: Series
+        @return: one Series
             -1: signals go straight down
             1: signals go straight up
             0: signals don't go straight down (even/rebound within)
@@ -490,8 +598,8 @@ class Tools(object):
     def sig_direction(*signals):
         """Check each df line to see if values (in each signal) eventually goes up/down
 
-        :param signals: Series
-        :return:
+        @param signals: Series
+        @return:
             -1: signals go down eventually but not straight
             1: signals go up eventually but not straight
             0: other situations: even, straight
@@ -525,8 +633,8 @@ class Tools(object):
         """Pos_should signal merge method: permutation addition
         --- 一直涨，sig值越来越大:1，否则0
 
-        :param signals: pos_should signals Series (weighted)
-        :return: signal: 0/1
+        @param signals: pos_should signals Series (weighted)
+        @return: signal: 0/1
         """
 
         result_ref = Tools.sig_one_direction(*signals)
@@ -545,8 +653,8 @@ class Tools(object):
         """Pos_should signal merge method: permutation subtract
         --- 一直跌，sig值越来越小:1， 否则0
 
-        :param signals: pos_should signals Series (weighted)
-        :return: signal: 0/1
+        @param signals: pos_should signals Series (weighted)
+        @return: signal: 0/1
         """
 
         result_ref = Tools.sig_one_direction(*signals)
@@ -565,8 +673,8 @@ class Tools(object):
         """Pos_should signal merge method: permutation go up
         --- sig值震荡（含持平）上涨：1，否则0
 
-        :param signals: pos_should signals Series (weighted)
-        :return: signal: 0/1
+        @param signals: pos_should signals Series (weighted)
+        @return: signal: 0/1
         """
 
         result_ref = Tools.sig_direction(*signals)
@@ -586,8 +694,8 @@ class Tools(object):
         """Pos_should signal merge method: permutation go up
         --- sig值震荡（含持平）下跌：1，否则0
 
-        :param signals: pos_should signals Series (weighted)
-        :return: signal: 0/1
+        @param signals: pos_should signals Series (weighted)
+        @return: signal: 0/1
         """
 
         result_ref = Tools.sig_direction(*signals)
