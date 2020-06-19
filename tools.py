@@ -3,6 +3,7 @@ import time
 import datetime
 import pandas as pd
 import numpy as np
+import random
 
 import empyrical
 
@@ -65,16 +66,128 @@ class Tools(object):
 
         return now
 
-    # 分类序列生成函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # 基因树 相关函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_node_id():
+        """获取节点的唯一ID"""
+
+        return 'node_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_node_name(node_map, node_mother_name):
+        """新添加node时，获取node名称（如'ACB')
+
+        @param node_map:
+        @param node_mother_name:
+        @return: None if the node can't be added.
+        """
+
+        # 检查错误
+        if not node_mother_name in node_map.keys():
+            print('NOTE: node_mother_name not in the node_map given. Node cannot be generated.')
+            return  # 母节点名称不在所给字典内
+
+        # 获取“兄弟”节点名称列表
+        letter_list = []
+        slice_end = len(node_mother_name)
+        for k in node_map.keys():
+            if k[:slice_end] == node_mother_name:
+                letter = k[slice_end:]
+                if letter:
+                    letter_list.append(letter)
+
+        # 获得命名
+        if not letter_list:
+            node_name = NODE_NAME_LIST[0]  # 母节点还未有任何子节点
+
+        else:
+            max_index = 0
+            for i in letter_list:
+                max_index = max(max_index, NODE_NAME_LIST.index(i))
+
+            new_index = max_index + 1
+            if new_index >= len(NODE_NAME_LIST):
+                node_name = None  # “兄弟”数量已太多，超出命名区间
+            else:
+                node_name = NODE_NAME_LIST[new_index]
+
+        return node_name
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def exchange_node(d1, d2, d1_node_name, d2_node_name):
+        """LV.1 结构交叉函数
+
+        @param d1: node_map1，dict
+        @param d2: node_map2, dict
+        @param d1_node_name: d1字典中需交叉的节点key（如‘ABA’）
+        @param d2_node_name: d2字典中需交叉的节点key
+        @return: 交叉后的d1, d2
+
+        NOTE: inplace
+        """
+
+        # 获取需剪切的keys
+
+        d1_keys = []
+        slice_end1 = len(d1_node_name)
+        for k in d1.keys():
+            if k[:slice_end1] == d1_node_name:
+                d1_keys.append(k)
+
+        d2_keys = []
+        slice_end2 = len(d2_node_name)
+        for k in d2.keys():
+            if k[:slice_end2] == d2_node_name:
+                d2_keys.append(k)
+
+        # 移花：把数据单独复制出来，然后清理原dict数据
+
+        tree1 = {}
+        for k in d1_keys:
+            tree1[k] = d1[k].copy()
+            d1.pop(k)
+
+        tree2 = {}
+        for k in d2_keys:
+            tree2[k] = d2[k].copy()
+            d2.pop(k)
+
+        # 定名：确定剪切出来的树叉的新名称
+
+        d1_keys_new = []
+        for k in d2_keys:
+            new_key = d1_node_name + k[slice_end2:]
+            d1_keys_new.append(new_key)
+
+        d2_keys_new = []
+        for k in d1_keys:
+            new_key = d2_node_name + k[slice_end1:]
+            d2_keys_new.append(new_key)
+
+        # 接木：把拷贝出来的数据接回替换点
+
+        for k_old, k_new in zip(d2_keys, d1_keys_new):
+            d1[k_new] = tree2[k_old]
+
+        for k_old, k_new in zip(d1_keys, d2_keys_new):
+            d2[k_new] = tree1[k_old]
+
+        return d1, d2
+
+    # 分类序列生成函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
     def compare_distance(feature1, feature2, *sub_edge, window=0):
         """特征分类函数，差值对比，绝对距离（比大小：距离为0）  (缺点在于步长个性化太强，需要单独设置参数)
 
-        @param feature1:
-        @param feature2:
-        @param sub_edge: the value which differs the subtract result
+        @param sub_edge: the value which differs the subtract result. (NOTE: negative for feature1 < feature2!)
         @param window: unfunctional here.
         """
 
@@ -101,9 +214,7 @@ class Tools(object):
     def compare_sigma(feature1, feature2, *sigma_edge, window=0):
         """特征分类函数，差值对比，平均标准差比例对比（比大小：比例为0）
 
-        @param feature1:
-        @param feature2:
-        @param sigma_edge: the sigma value which differs the subtract result (NOTE: negative for feature1 < feature2!)
+        @param sigma_edge: the sigma value which differs the subtract result. (NOTE: negative for feature1 < feature2!)
         @param window: unfunctional here.
         """
 
@@ -184,7 +295,7 @@ class Tools(object):
 
             if window == 0:
                 df_result['cut_ref'] = df_result['data'].min() + (
-                            df_result['data'].max() - df_result['data'].min()) * point
+                        df_result['data'].max() - df_result['data'].min()) * point
             else:
                 df_result['max_ref'] = df_result['data'].rolling(window).max().fillna(method='bfill')
                 df_result['min_ref'] = df_result['data'].rolling(window).min().fillna(method='bfill')
@@ -278,7 +389,6 @@ class Tools(object):
 
         return df_result['cut']
 
-
     # 条件函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -325,7 +435,6 @@ class Tools(object):
         result_sig = df_sig['result_sig'].fillna(0)
 
         return result_sig
-
 
     # 合并 pos_should 信号的相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
@@ -529,7 +638,6 @@ class Tools(object):
 
         return df_result['result_sig']
 
-
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -686,7 +794,6 @@ class Tools(object):
 
         return df_sig['result_sig']
 
-
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -706,7 +813,6 @@ class Tools(object):
         df_sig['result_sig'][df_sig['result_ref'] < 0] = 1
 
         return df_sig['result_sig']
-
 
     # 数据准备相关函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
@@ -849,7 +955,8 @@ class Tools(object):
         list_kbar = []
         t0 = time.time()
 
-        file_list_trade = Tools.get_csv_names(file_path_trade, start_date=start_date, end_date=end_date, cat='BITMEX.trade')
+        file_list_trade = Tools.get_csv_names(file_path_trade, start_date=start_date, end_date=end_date,
+                                              cat='BITMEX.trade')
         for file in file_list_trade:
 
             df_new = pd.read_csv('%s/%s' % (file_path_trade, file),
@@ -891,7 +998,8 @@ class Tools(object):
         list_ticks = []
         t0 = time.time()
 
-        file_list_quote = Tools.get_csv_names(file_path_quote, start_date=start_date, end_date=end_date, cat='BITMEX.quote')
+        file_list_quote = Tools.get_csv_names(file_path_quote, start_date=start_date, end_date=end_date,
+                                              cat='BITMEX.quote')
         for file in file_list_quote:
 
             df_new = pd.read_csv('%s/%s' % (file_path_quote, file),
@@ -996,7 +1104,7 @@ class Tools(object):
             df['timestamp'] = Tools.bitmex_time_format_change(df['timestamp'])
             df = df[
                 (df.tickDirection == 'PlusTick') | (
-                            df.tickDirection == 'MinusTick')]  # keep only lines that price changed
+                        df.tickDirection == 'MinusTick')]  # keep only lines that price changed
 
             # 仅保留同方向连续吃两笔以上的tick --因为后续 limit order 成交的判断依据是：越过limit价格
             df['tickDirection_old'] = np.append(np.nan, df['tickDirection'][:-1])
@@ -1257,8 +1365,6 @@ class Tools(object):
             else:
                 return np.nan, np.nan
 
-
-
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -1346,7 +1452,6 @@ class Tools(object):
             else:
                 return np.nan, np.nan
 
-
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -1383,7 +1488,7 @@ class Tools(object):
                 if ticks < slippage_tick_max:
                     slippage = 0
                 else:
-                    slippage = Tools.fit_to_minimal(np.random.random()*np.random.random() * slip_range)
+                    slippage = Tools.fit_to_minimal(np.random.random() * np.random.random() * slip_range)
 
         else:
 
@@ -1395,7 +1500,6 @@ class Tools(object):
         slippage = abs(Tools.fit_to_minimal(slippage, min_range=min_range))
 
         return slippage
-
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1675,9 +1779,7 @@ class Tools(object):
         return dict_score
 
 
-
 if __name__ == '__main__':
-
     # 准备虚拟的交易记录字典
     df1 = pd.read_csv('data/trading_record_example.csv')
     trading_record = {
