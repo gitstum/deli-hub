@@ -96,8 +96,14 @@ class Method(Enum):
         Tools.各方法名字对应的函数()
     """
 
-    ALL = ['comb_sum', 'comb_vote1', 'comb_vote2', 'comb_vote3', 'comb_min',
+    ALL = ['cond_1', 'cond_2',
+           'comb_sum', 'comb_vote1', 'comb_vote2', 'comb_vote3', 'comb_min',
            'perm_cond', 'perm_add', 'perm_sub', 'perm_up', 'perm_down']
+
+    #
+    CONDITION = ['cond_1',  # 在满足a(0/1)条件(1)的条件下，使用b的pos_should，其余0 【限2列】
+                 'cond_2'  # 在满足a方向（正负，对比0）的条件下，使用同方向（正负）的b的pos_should，其余0 【限2列】
+                 ]
 
     # 组合求解
     COMBINATION = ['comb_sum',  # 对各列signal进行加和
@@ -109,6 +115,7 @@ class Method(Enum):
 
     # 排列求解：按序依次判断（/比较）
     PERMUTATION = ['perm_cond',  # 在满足a方向（正负，对比0）的条件下，使用同方向（正负）的b的pos_should，其余0 【限2列】
+                   'perm_cond2',  # 在满足a条件（0/1）的情况下，使用b的pos_should，其余0  【限2列】
                    'perm_add',  # 一直涨，sig值越来越大:1，否则0
                    'perm_sub',  # 一直跌，sig值越来越小:1， 否则0
                    'perm_up',  # sig值震荡（含持平）上涨：1，否则0
@@ -135,8 +142,8 @@ class Classifier(Enum):
                  'cut_sigma',  # 自切割，sigma比例切割
                  'cut_distance',  # 自切割，全距比例切割
 
-                 'compare_distance',  # 比较分类，距离比较（比大小：距离为0）
-                 'compare_ratio'  # 比较分类，比例比较  -- 适用于abs
+                 'compare_distance',  # 比较feature差值，绝对距离（比大小：距离为0）
+                 'compare_sigma'  # 比较feature差值，平均标准差比例（比大小：比例为0）
                  ]
 
 
