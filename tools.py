@@ -36,7 +36,7 @@ class Tools(object):
             pool = mp.Pool(processes=process_num)
 
         for i in args:
-            tag = pool.apply_async(func, i)  # i must be tuple
+            tag = pool.apply_async(func, i)  # note i must be tuple
             result_tags.append(tag)
 
         pool.close()
@@ -51,25 +51,307 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def str_time(f=6):
+        """获取str时间信息。f: 保留几位小数。"""
+
+        if f == 0: f = -1
+        f -= 6
+        if f > 0: f = 0
+
+        if f == 0:
+            now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))
+        else:
+            now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))[:f]
+
+        return now
+
+    # 分类序列生成函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def compare_distance(feature1, feature2, *sub_edge, window=0):
+        """特征分类函数，差值对比，绝对距离（比大小：距离为0）  (缺点在于步长个性化太强，需要单独设置参数)
+
+        @param feature1:
+        @param feature2:
+        @param sub_edge: the value which differs the subtract result
+        @param window: unfunctional here.
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        feature1.name = 'feature1'
+        feature2.name = 'feature2'
+        sub_edge = sorted(sub_edge)
+
+        df_result = Tools.sig_merge(feature1, feature2)  # nan filled.
+        df_result['difference'] = df_result['feature1'] - df_result['feature2']
+
+        df_result['diff_tag'] = 0
+        for num in list(range(len(sub_edge))):
+            df_result['diff_tag'][df_result['difference'] >= sub_edge[num]] = num + 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['diff_tag']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def compare_sigma(feature1, feature2, *sigma_edge, window=0):
+        """特征分类函数，差值对比，平均标准差比例对比（比大小：比例为0）
+
+        @param feature1:
+        @param feature2:
+        @param sigma_edge: the sigma value which differs the subtract result (NOTE: negative for feature1 < feature2!)
+        @param window: unfunctional here.
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        feature1.name = 'feature1'
+        feature2.name = 'feature2'
+        sigma_edge = sorted(sigma_edge)
+
+        df_result = Tools.sig_merge(feature1, feature2)  # nan filled.
+        df_result['difference'] = df_result['feature1'] - df_result['feature2']
+
+        if window == 0:
+            sigma = (feature1.std() + feature2.std()) / 2
+            df_result['sigma'] = sigma
+        else:
+            sigma1 = feature1.rolling(window).std().fillna(method='bfill')
+            sigma2 = feature2.rolling(window).std().fillna(method='bfill')
+            sigma1.name = 'sigma1'
+            sigma2.name = 'sigma2'
+            df_sigma = Tools.sig_merge(sigma1, sigma2)  # nan filled.
+            df_result['sigma'] = (df_sigma['sigma1'] + df_sigma['sigma2']) / 2
+
+        df_result['sigma_ratio'] = df_result['difference'] / df_result['sigma']
+
+        df_result['diff_tag'] = 0
+        for num in list(range(len(sigma_edge))):
+            df_result['diff_tag'][df_result['sigma_ratio'] >= sigma_edge[num]] = num + 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cut_number(feature, *cut_points, window=0):
+        """特征分类函数，自切割，常量切割  (缺点在于步长个性化太强，需要单独设置参数)
+
+        @param feature: feature Series (timestamp index) to be cut
+        @param cut_points: constant values to cut feature
+        @param window: unfunctional.
+        @return: cut result: 0, 1, 2 ...
+        """
+
+        feature.name = 'data'
+
+        df_result = pd.DataFrame(feature)
+        df_result['cut'] = 0
+
+        cut_points = sorted(cut_points)  # NOTE it's sorted!
+        for num in list(range(len(cut_points))):
+            df_result['cut'][df_result['data'] >= cut_points[num]] = num + 1
+
+        return df_result['cut']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cut_distance(feature, *cut_points, window=0):
+        """特征分类函数，自切割，数值线性比例切割  (缺点在于不适应长尾，步长设置困难)
+
+        @param feature: feature Series (timestamp index) to be cut
+        @param window: rolling window for range reference
+        @param cut_points: where of the whole distance(min-max) to cut feature , 0-1
+        @return: cut result: 0, 1, 2 ...
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        feature.name = 'data'
+        df_result = pd.DataFrame(feature)
+        df_result['cut'] = 0
+
+        num = 0
+        cut_points = sorted(cut_points)  # NOTE
+        for point in cut_points:
+
+            if window == 0:
+                df_result['cut_ref'] = df_result['data'].min() + (
+                            df_result['data'].max() - df_result['data'].min()) * point
+            else:
+                df_result['max_ref'] = df_result['data'].rolling(window).max().fillna(method='bfill')
+                df_result['min_ref'] = df_result['data'].rolling(window).min().fillna(method='bfill')
+                df_result['cut_ref'] = df_result['min_ref'] + (df_result['max_ref'] - df_result['min_ref']) * point
+
+            df_result['cut'][df_result['data'] > df_result['cut_ref']] = num + 1
+            num += 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['cut']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cut_rank(feature, *cut_percents, window=0):
+        """特征分类函数，自切割，分布数量比例切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
+
+        @param feature: feature Series (timestamp index) to be cut
+        @param window: rolling window for range reference
+        @param cut_percents: percent in float(0-1) to cut features apart
+        @return: cut result: 0, 1, 2 ...
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        feature.name = 'data'
+        df_result = pd.DataFrame(feature)
+        df_result['cut'] = 0
+
+        num = 0
+        cut_percents = sorted(cut_percents)  # NOTE
+        for percent in cut_percents:
+
+            if window == 0:
+                df_result['cut_ref'] = df_result['data'].quantile(percent)  # 有利于提升速度（每列都分别rolling一下太慢）
+            else:
+                df_result['cut_ref'] = df_result['data'].rolling(window).quantile(percent).fillna(method='bfill')
+
+            df_result['cut'][df_result['data'] > df_result['cut_ref']] = num + 1
+            num += 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['cut']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cut_sigma(feature, *cut_sigmas, window=0):
+        """特征分类函数，自切割，分布标准倍数切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
+
+        @param feature: feature Series (timestamp index) to be cut
+        @param window: rolling window for range reference
+        @param cut_sigmas: float(0-1) of sigma to cut features apart
+        @return: cut result: -2, -1, 0, 1, 2, 3...  (NOTE negative results here)
+
+        NOTE: support negative-positive, positive-only and negative-only feature (但是外部的映射字典不要弄错)
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        feature.name = 'data'
+        df_result = pd.DataFrame(feature)
+        df_result['cut'] = 0
+
+        num_up = 0
+        num_down = 0
+        cut_sigmas = sorted(cut_sigmas)  # NOTE
+        for sigma in cut_sigmas:
+
+            if window == 0:
+                feature_mean = feature.mean()
+                feature_edge = feature.std() * sigma
+                df_result['cut_ref_up'] = feature_mean + feature_edge
+                df_result['cut_ref_down'] = feature_mean - feature_edge  # 可为负
+
+            else:
+                df_result['data_mean'] = df_result['data'].rolling(window).mean().fillna(method='bfill')
+                df_result['sigma_value'] = df_result['data'].rolling(window).std().fillna(method='bfill') * sigma
+                df_result['cut_ref_up'] = df_result['data_mean'] + df_result['sigma_value']
+                df_result['cut_ref_down'] = df_result['data_mean'] - df_result['sigma_value']
+
+            df_result['cut'][df_result['data'] > df_result['cut_ref_up']] = num_up + 1
+            df_result['cut'][df_result['data'] < df_result['cut_ref_down']] = num_down - 1
+
+            num_up += 1
+            num_down -= 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['cut']
+
+
+    # 条件函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cond_1(cond, pos_should):
+        """CONDITION method: 0/1 condition
+        ---在满足a(0/1)条件(1)的条件下，使用b的pos_should，其余0 【限2列】
+
+        @param cond: condition to accept pos_should
+        @param pos_should: pos_should signals Series (weighted)
+        @return: pos_should signal
+        """
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
+        cond.name = 'condition'
+        pos_should.name = 'signal'
+
+        df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
+        df_sig['result_sig'] = df_sig['signal']
+        df_sig['result_sig'][df_sig['condition'] <= 0] = 0
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_sig['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cond_2(cond, pos_should):
+        """CONDITION method: -1/0/1 condition
+        ---在满足cond方向（正负，对比0）的条件下，pos_should如同方向（正负），使用其值，其余为0 【限2列】
+
+        @param cond: condition to accept pos_should
+        @param pos_should: pos_should signals Series (weighted)
+        @return: pos_should signal
+        """
+
+        df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
+
+        df_sig['result_ref'] = df_sig.iloc[:, 0] * df_sig.iloc[:, 1]
+        df_sig['result_sig'] = df_sig.iloc[:, 1][df_sig['result_ref'] > 0]
+
+        result_sig = df_sig['result_sig'].fillna(0)
+
+        return result_sig
+
+
+    # 合并 pos_should 信号的相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def sig_merge(*signals):
         """Merge signals(pos_should) Series into a DataFrame
 
-        :param signals: signals Series
+        @param signals: signals Series
             index: timestamp
             value: pos_should signal
-        :return:
+        @return:
         """
+
+        # print(signals)
 
         list_series = []
         for s in signals:
             list_series.append(s)
 
-        df_sig = pd.concat(list_series, axis=1).fillna(method='ffill')
+        df_sig = pd.concat(list_series, axis=1, sort=False).fillna(method='ffill')
 
         # dev
-        print('sig_merge()   -----------------------')
-        print(type(df_sig))
-        print(df_sig)
+        # print('sig_merge()   -----------------------')
+        # print(type(df_sig))
+        # print(df_sig)
 
         return df_sig
 
@@ -79,11 +361,11 @@ class Tools(object):
     def sig_weight(signal, weight):
         """Return a weighted pos_should signal Series.
 
-        :param signal: a signal Series
+        @param signal: a signal Series
             index: timestamp
             value: pos_should signal
-        :param weight: weight of the signal
-        :return: weighted pos_should signal Series
+        @param weight: weight of the signal
+        @return: weighted pos_should signal Series
         """
 
         return signal * weight
@@ -94,9 +376,9 @@ class Tools(object):
     def sig_to_one(method, *signals):
         """分流函数
 
-        :param method: method for merging signals into one
-        :param signals: pos_should signals Series(weighted)f
-        :return: pos_should signal
+        @param method: method for merging signals into one
+        @param signals: pos_should signals Series(weighted)f
+        @return: pos_should signal
         """
 
         if not method in Method.ALL.value:
@@ -110,18 +392,27 @@ class Tools(object):
         #     print('-' * 10)
         # print('-' * 20)
 
-        if method == 'comb_sum1':
-            return Tools.comb_sum1(*signals)
+        if method == 'comb_sum':
+            return Tools.comb_sum(*signals)
         elif method == 'comb_vote1':
             return Tools.comb_vote1(*signals)
-        elif method == 'comb_min1':
-            return Tools.comb_min1(*signals)
-        elif method == 'perm_add1':
-            return Tools.perm_add1(*signals)
-        elif method == 'perm_add2':
-            return Tools.perm_add2(*signals)
-        elif method == 'perm_cut1':
-            return Tools.perm_cut1(*signals)
+        elif method == 'comb_vote2':
+            return Tools.comb_vote2(*signals)
+        elif method == 'comb_vote3':
+            return Tools.comb_vote3(*signals)
+        elif method == 'comb_min':
+            return Tools.comb_min(*signals)
+
+        # elif method == 'cond_2':
+        #     return Tools.cond_2(*signals)
+        elif method == 'perm_add':
+            return Tools.perm_add(*signals)
+        elif method == 'perm_sub':
+            return Tools.perm_sub(*signals)
+        elif method == 'perm_up':
+            return Tools.perm_up(*signals)
+        elif method == 'perm_down':
+            return Tools.perm_down(*signals)
 
         else:
             print('No method assigned in staticmethod sig_to_one()')
@@ -130,11 +421,12 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def comb_sum1(*signals):
-        """Pos_should signal merge method: comb_sum1
+    def comb_sum(*signals):
+        """Pos_should signal merge method: comb_sum1  
+        ---对各列signal进行加和
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal
+        @param signals: pos_should signals Series (weighted)
+        @return: pos_should signal
         """
 
         df_sig = Tools.sig_merge(*signals)
@@ -143,18 +435,18 @@ class Tools(object):
 
         return result_sig
 
-
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
     def comb_vote1(*signals):
-        """Pos_should signal merge method: comb_vote1
+        """Pos_should signal merge method: comb_vote1  
+        ---使用各列signal投票，加和，输出为：-1/0/1
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal  -- -1/0/1
+        @param signals: pos_should signals Series (weighted)
+        @return: pos_should signal  -- -1/0/1
         """
 
-        result_ref = Tools.comb_sum1(*signals)  # NOTE this depends on comb_sum1()
+        result_ref = Tools.comb_sum(*signals)  # NOTE this depends on comb_sum1()
 
         df_result = pd.DataFrame(result_ref, columns=['result_ref'])
         df_result['result_sig'] = 0
@@ -168,11 +460,60 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def comb_min1(*signals):
-        """Pos_should signal merge method: comb_min1
+    def comb_vote2(*signals):
+        """Pos_should signal merge method: comb_vote2  
+        ---使用各列signal投票，须无反对票，输出为：-1/0/1
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal
+        @param signals: pos_should signals Series (weighted)
+        @return: pos_should signal  -- -1/0/1
+        """
+
+        df_sig = Tools.sig_merge(*signals)
+
+        df_result = pd.DataFrame(df_sig.max(axis=1), columns=['sig_max'])
+        df_result['sig_min'] = df_sig.min(axis=1)
+
+        df_result['result_sig'] = 0
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+        df_result['result_sig'][df_result['sig_max'] <= 0] = -1
+        df_result['result_sig'][df_result['sig_min'] >= 0] = 1
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def comb_vote3(*signals):
+        """Pos_should signal merge method: comb_vote3  
+        ---使用各列signal投票，须全票通过，输出为：-1/0/1
+
+        @param signals: pos_should signals Series (weighted)
+        @return: pos_should signal  -- -1/0/1
+        """
+
+        df_sig = Tools.sig_merge(*signals)
+
+        df_result = pd.DataFrame(df_sig.max(axis=1), columns=['sig_max'])
+        df_result['sig_min'] = df_sig.min(axis=1)
+
+        df_result['result_sig'] = 0
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+        df_result['result_sig'][df_result['sig_max'] < 0] = -1
+        df_result['result_sig'][df_result['sig_min'] > 0] = 1
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
+        return df_result['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def comb_min(*signals):
+        """Pos_should signal merge method: comb_min
+        ---多/空方向：取各列signal中最小/最大的，以做多/空。如sig含有相反符号，则返回0（可用于判断）
+
+        @param signals: pos_should signals Series (weighted)
+        @return: pos_should signal
         """
 
         df_sig = Tools.sig_merge(*signals)
@@ -188,69 +529,503 @@ class Tools(object):
 
         return df_result['result_sig']
 
+
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def perm_add1(*signals):
-        """Pos_should signal merge method: perm_add1
+    def sig_trend(*signals):
+        """Compare each Series line by line
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal
+        @param signals: Series
+        @return: DataFrame
+        """
+        df_sig = Tools.sig_merge(*signals)
+
+        column_num = len(df_sig.columns)
+        num = 0
+        df_trend = pd.DataFrame()  # if len(signals) < 2: return an empty df
+
+        while num < column_num - 1:
+            df_trend[num] = df_sig.iloc[:, num + 1] - df_sig.iloc[:, num]
+            num += 1
+
+        return df_trend
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def df_to_series(df):
+        """Turn a pd.DataFrame into a tuple containing all the Series."""
+
+        list_series = []
+        column_num = len(df.columns)
+        num = 0
+
+        while num < column_num:
+            list_series.append(df.iloc[:, num])
+            num += 1
+
+        return tuple(list_series)
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sig_one_direction(*signals):
+        """Check each df line to see if values (in each signal) goes straight or not
+
+        @param signals: Series
+        @return: one Series
+            -1: signals go straight down
+            1: signals go straight up
+            0: signals don't go straight down (even/rebound within)
         """
 
-        # TODO: verify codes here
+        df_trend = Tools.sig_trend(*signals)
+        trend_signals = Tools.df_to_series(df_trend)
+        result_ref = Tools.comb_min(*trend_signals)  # 注意这里用拆包语法
+
+        result_ref.name = 'result_ref'
+        df_sig = pd.DataFrame(result_ref)
+        df_sig['result_sig'] = 0
+        df_sig['result_sig'][df_sig['result_ref'] > 0] = 1  # NOTE ">=" can't be set here
+        df_sig['result_sig'][df_sig['result_ref'] < 0] = -1
+
+        return df_sig['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sig_direction(*signals):
+        """Check each df line to see if values (in each signal) eventually goes up/down
+
+        @param signals: Series
+        @return:
+            -1: signals go down eventually but not straight
+            1: signals go up eventually but not straight
+            0: other situations: even, straight
+        """
+
+        # if len(signals) < 3:
+        #     return np.nan
 
         df_sig = Tools.sig_merge(*signals)
 
+        df_sig['sig_start'] = df_sig.iloc[:, 0]
+        df_sig['sig_end'] = df_sig.iloc[:, -2]  # -2: cause 'sig_start' became -1 
+        df_sig['direction'] = df_sig['sig_end'] - df_sig['sig_start']
 
-        # TODO: method development
-        pass
-        result = 'to be done'
+        result_ref = Tools.sig_one_direction(*signals)
+        df_sig['one_direction'] = result_ref
+
+        df_sig['result_ref'] = df_sig['direction'][df_sig['one_direction'] == 0]
+        df_sig['result_sig'] = 0
+
+        result_sig = df_sig['result_sig'].copy()
+        result_sig[df_sig['result_ref'] > 0] = 1
+        result_sig[df_sig['result_ref'] < 0] = -1
+
+        return result_sig
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_add(*signals):
+        """Pos_should signal merge method: permutation addition
+        --- 一直涨，sig值越来越大:1，否则0
+
+        @param signals: pos_should signals Series (weighted)
+        @return: signal: 0/1
+        """
+
+        result_ref = Tools.sig_one_direction(*signals)
+
+        result_ref.name = 'result_ref'
+        df_sig = pd.DataFrame(result_ref)
+        df_sig['result_sig'] = 0
+        df_sig['result_sig'][df_sig['result_ref'] > 0] = 1
+
+        return df_sig['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_sub(*signals):
+        """Pos_should signal merge method: permutation subtract
+        --- 一直跌，sig值越来越小:1， 否则0
+
+        @param signals: pos_should signals Series (weighted)
+        @return: signal: 0/1
+        """
+
+        result_ref = Tools.sig_one_direction(*signals)
+
+        result_ref.name = 'result_ref'
+        df_sig = pd.DataFrame(result_ref)
+        df_sig['result_sig'] = 0
+        df_sig['result_sig'][df_sig['result_ref'] < 0] = 1
+
+        return df_sig['result_sig']
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_up(*signals):
+        """Pos_should signal merge method: permutation go up
+        --- sig值震荡（含持平）上涨：1，否则0
+
+        @param signals: pos_should signals Series (weighted)
+        @return: signal: 0/1
+        """
+
+        result_ref = Tools.sig_direction(*signals)
+
+        result_ref.name = 'result_ref'
+        df_sig = pd.DataFrame(result_ref)
+        df_sig['result_sig'] = 0
+        df_sig['result_sig'][df_sig['result_ref'] > 0] = 1
+
+        return df_sig['result_sig']
+
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def perm_down(*signals):
+        """Pos_should signal merge method: permutation go up
+        --- sig值震荡（含持平）下跌：1，否则0
+
+        @param signals: pos_should signals Series (weighted)
+        @return: signal: 0/1
+        """
+
+        result_ref = Tools.sig_direction(*signals)
+
+        result_ref.name = 'result_ref'
+        df_sig = pd.DataFrame(result_ref)
+        df_sig['result_sig'] = 0
+        df_sig['result_sig'][df_sig['result_ref'] < 0] = 1
+
+        return df_sig['result_sig']
+
+
+    # 数据准备相关函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_csv_names(file_path, start_date=None, end_date=None, cat='BITMEX.trade'):
+        """To get all target file names. Date range support only for bitmex TRADE csv, for now
+
+        @param file_path: path that contains all the csv files(each day, no break)
+        @param start_date: str, format: '20150925'
+        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
+        @param cat: exchange.csv_type
+        @return: file names list
+        """
+
+        file_list = sorted(os.listdir(file_path))
+        for x in file_list.copy():
+            if x[-4:] != '.csv':
+                file_list.remove(x)
+
+        if not cat[:6] == 'BITMEX':
+            return file_list
+
+        if start_date:
+            if pd.to_datetime(file_list[0][6:-4]) < pd.to_datetime(start_date):
+                while len(file_list) > 0:
+                    if file_list[0][6:-4] == start_date:
+                        break
+                    file_list.pop(0)
+        if end_date:
+            if pd.to_datetime(file_list[-1][6:-4]) > pd.to_datetime(end_date):
+                while len(file_list) > 0:
+                    if file_list[-1][6:-4] == end_date:
+                        file_list.pop(-1)  # end date is not included
+                        break
+                    file_list.pop(-1)
+
+        return file_list
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def bitmex_time_format_change(bitmex_time):
+        """Change the unfriendly bitmex time format!
+
+        @param bitmex_time: original timestamp Series from bitmex trade/quote data
+        @return: datetime64 timestamp Series.
+        """
+
+        bitmex_time = bitmex_time.str[:10] + ' ' + bitmex_time.str[11:]  # change the unfriendly time format!
+        timestamp_series = pd.to_datetime(bitmex_time)
+
+        return timestamp_series
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_kbar(df_kbar=pd.DataFrame(), data_path=None, unit='5t'):
+        """To get the K price DataFrame from a smaller unit K price csv.
+
+        @param df_kbar: a smaller unit K price DataFrame
+        @param data_path: a smaller unit K price csv
+        @param unit: pd.groupby() unit
+        @return: kbar DataFrame
+        """
+
+        if not df_kbar.empty:
+            if df_kbar.index.name == 'timestamp':
+                df_kbar.reset_index(inplace=True)
+        else:
+            if data_path:
+                df_kbar = pd.read_csv(data_path)
+            else:
+                print('Either df_kbar or data_path is required.')
+                return
+
+        df_kbar['timestamp'] = pd.to_datetime(df_kbar.timestamp)
+        df = df_kbar.groupby(pd.Grouper(key='timestamp', freq=unit)).agg({'price_start': 'first',
+                                                                          'price_end': 'last',
+                                                                          'price_max': 'max',
+                                                                          'price_min': 'min',
+                                                                          'volume': 'sum',
+                                                                          'ticks': 'sum'
+                                                                          })
+
+        return df
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def get_kbar_from_tick(file_path_trade, file_path_quote, unit, to_path=None, to_name=None, start_date=None,
+                           end_date=None, exchange='BITMEX', symbol='XBTUSD'):
+        """To get the K price DataFrame from tick price. Bitmex only. NO more than 1 day
+
+        @param file_path_trade: path that contains the trade csv files(fromt bitmex)
+        @param file_path_quote: path that contains the quote csv files(fromt bitmex)
+        @param unit: compress unit: example: '30s', 't', '15t', 'h', 'd'. No more than 1 Day.
+        @param to_path: path to save kbar csv file
+        @param to_name: csv file name
+        @param start_date: str, format: '20150925'
+        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
+        @param exchange: exchange
+        @param symbol: symbol
+        @return: compressed tick price DataFrame with columns:
+            timestamp  --note that it's the period start timestamp
+            price_start
+            price_end
+            price_max
+            price_min
+        """
+
+        if not exchange == 'BITMEX':
+            return
+
+        t0 = time.time()
+
+        # Two process for two data source
+        df_kbar, df_ticks = Tools.agg_cal(Tools.compress_distribute,
+                                          ('trade', file_path_trade, unit, start_date, end_date, symbol),
+                                          ('quote', file_path_quote, unit, start_date, end_date, symbol),
+                                          process_num=2)  # 我承认这种传参方式很奇葩。。。
+
+        df_kbar = pd.concat([df_kbar, df_ticks], axis=1, sort=False)
+        df_kbar.rename({'symbol': 'ticks'}, axis=1, inplace=True)
+
+        print('%.3f | kbar generated successfully.' % (time.time() - t0))
+
+        if to_path and to_name:
+            df_kbar.to_csv('%s/%s.csv' % (to_path, to_name))
+            print('%.3f | "%s" saved successfully to "%s".' % ((time.time() - t0), to_name, to_path))
+
+        return df_kbar
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def compress_trade(file_path_trade, unit, start_date, end_date, symbol):
+        """trade csv dealing: get basic price info"""
+
+        list_kbar = []
+        t0 = time.time()
+
+        file_list_trade = Tools.get_csv_names(file_path_trade, start_date=start_date, end_date=end_date, cat='BITMEX.trade')
+        for file in file_list_trade:
+
+            df_new = pd.read_csv('%s/%s' % (file_path_trade, file),
+                                 usecols=['timestamp', 'symbol', 'side', 'size', 'price'])
+            if symbol not in list(df_new['symbol']):
+                continue
+            df_new = df_new[df_new.symbol == symbol]
+            df_new.reset_index(drop=True, inplace=True)
+
+            df_new['timestamp'] = Tools.bitmex_time_format_change(df_new['timestamp'])
+            group_price = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit))).price
+            price_start = group_price.first()
+            price_end = group_price.last()
+            price_max = group_price.max()
+            price_min = group_price.min()
+            volume = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit)))['size'].sum()
+
+            df_g = pd.DataFrame(price_start)
+            df_g.rename({'price': 'price_start'}, axis=1, inplace=True)
+            df_g['price_end'] = price_end
+            df_g['price_max'] = price_max
+            df_g['price_min'] = price_min
+            df_g['volume'] = volume
+
+            list_kbar.append(df_g)
+
+            print('%.3f | "%s" included.' % ((time.time() - t0), file))
+
+        df_kbar = pd.concat(list_kbar, sort=False, ignore_index=False)
+
+        return df_kbar
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def compress_quote(file_path_quote, unit, start_date, end_date, symbol):
+        """quote csv dealing: get ticks count for each line(for flipage estimation)"""
+
+        list_ticks = []
+        t0 = time.time()
+
+        file_list_quote = Tools.get_csv_names(file_path_quote, start_date=start_date, end_date=end_date, cat='BITMEX.quote')
+        for file in file_list_quote:
+
+            df_new = pd.read_csv('%s/%s' % (file_path_quote, file),
+                                 usecols=['timestamp', 'symbol'])
+            if symbol not in list(df_new['symbol']):
+                continue
+            df_new = df_new[df_new.symbol == symbol]
+            df_new.reset_index(drop=True, inplace=True)
+
+            df_new['timestamp'] = Tools.bitmex_time_format_change(df_new['timestamp'])
+            ticks = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit))).symbol.count()
+            df_ticks = pd.DataFrame(ticks)
+            list_ticks.append(df_ticks)
+
+            print('%.3f | "%s" ticks counted.' % ((time.time() - t0), file))
+
+        df_ticks = pd.concat(list_ticks, sort=False, ignore_index=False)
+
+        return df_ticks
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def compress_distribute(direct_to, file_path, unit, start_date, end_date, symbol):
+        result = None
+        if direct_to == 'trade':
+            result = Tools.compress_trade(file_path, unit, start_date, end_date, symbol)
+        elif direct_to == 'quote':
+            result = Tools.compress_quote(file_path, unit, start_date, end_date, symbol)
 
         return result
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def perm_add2(*signals):
-        """Pos_should signal merge method: perm_add2
+    def tick_comp_price(file_path, start_date=None, end_date=None):
+        """Get the compressed traded tick price from file_path.
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal
+        @param file_path: path that contains all the csv files(each day, no break) with columns:
+            timestamp
+            price
+        @param start_date: str, format: '20150925'
+        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
+        @param exchange: support only bitmex, for now
+        @return: compressed tick price DataFrame with columns:
+            timestamp
+            price
         """
 
-        # TODO: verify codes here
+        # get all target file names
+        file_list = Tools.get_csv_names(file_path, start_date=start_date, end_date=end_date)
 
-        df_sig = Tools.sig_merge(*signals)
+        list_df = []
+        for file in file_list:
+            df_add = pd.read_csv('%s/%s' % (file_path, file))
+            list_df.append(df_add)
 
+        df_tick_comp_price = pd.concat(list_df, ignore_index=True, sort=False)
 
-        # TODO: method development
-        pass
-        result = 'to be done'
-
-        return result
+        return df_tick_comp_price
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def perm_cut1(*signals):
-        """Pos_should signal merge method: perm_cut1
+    def get_tick_comp_price(file_path, to_path=None, start_date=None, end_date=None, exchange='BITMEX',
+                            symbol='XBTUSD'):
+        """To get the compressed traded tick price from raw trade data in file_path.
 
-        :param signals: pos_should signals Series (weighted)
-        :return: pos_should signal
+        @param file_path: path that contains all the raw trade csv files(support bitmex only, for now).
+        @param to_path: path to save csv file. None for not saving.
+        @param start_date: str, format: '20150925'
+        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
+        @param exchange: support bitmex only, for now.
+        @param symbol: trading target
+        @return: compressed tick price DataFrame with columns:
+            timestamp
+            price
         """
 
-        # TODO: verify codes here
+        if not exchange == 'BITMEX':
+            return
 
-        df_sig = Tools.sig_merge(*signals)
+        # close SettingWithCopyWarning
+        pd.set_option('mode.chained_assignment', None)
 
+        t0 = time.time()
 
-        # TODO: method development
-        pass
-        result = 'to be done'
+        list_tick_comp_price = []
 
-        return result
+        # get all target file names
+        file_list = Tools.get_csv_names(file_path, start_date=start_date, end_date=end_date)
 
+        # read and compress all the files in file_path
+        for file in file_list:
+
+            df = pd.read_csv('%s/%s' % (file_path, file), usecols=['timestamp', 'symbol', 'price', 'tickDirection'])
+            if symbol not in list(df['symbol']):
+                continue
+
+            df = df[df.symbol == symbol]
+            df.reset_index(inplace=True, drop=True)
+            df['timestamp'] = Tools.bitmex_time_format_change(df['timestamp'])
+            df = df[
+                (df.tickDirection == 'PlusTick') | (
+                            df.tickDirection == 'MinusTick')]  # keep only lines that price changed
+
+            # 仅保留同方向连续吃两笔以上的tick --因为后续 limit order 成交的判断依据是：越过limit价格
+            df['tickDirection_old'] = np.append(np.nan, df['tickDirection'][:-1])
+            df['keep'] = 1
+            df['keep'][df.tickDirection != df.tickDirection_old] = 0
+            df.iloc[0, -1] = 1  # keep first line
+            df = df[df['keep'] == 1]
+
+            df.drop(['symbol', 'tickDirection', 'tickDirection_old', 'keep'], axis=1, inplace=True)
+
+            list_tick_comp_price.append(df)
+            print('%.3f | file "%s" included.' % ((time.time() - t0), file))
+
+            # save csv files to to_path(folder)
+            if to_path:
+                df.to_csv(('%s/%s' % (to_path, file)), index=False)  # the same file name.
+                print('%.3f | file "%s" saved to "%s".' % ((time.time() - t0), file, to_path))
+
+        df_tick_comp_price = pd.concat(list_tick_comp_price)
+        df_tick_comp_price.reset_index(drop=True, inplace=True)
+
+        print('%.3f | trade tick price compressed successfully.' % (time.time() - t0))
+
+        # reopen SettingWithCopyWarning
+        pd.set_option('mode.chained_assignment', 'warn')
+
+        return df_tick_comp_price
+
+    # 回测过程相关函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -649,13 +1424,6 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def str_time():
-        now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))
-        return now
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
     def get_score(trading_record, df_kbar, capital=CAPITAL, annual_period=ANNUAL_PERIOD, save_file=None):
         """Get performance from trading records and prices.
 
@@ -906,321 +1674,6 @@ class Tools(object):
 
         return dict_score
 
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def get_csv_names(file_path, start_date=None, end_date=None, cat='BITMEX.trade'):
-        """To get all target file names. Date range support only for bitmex TRADE csv, for now
-
-        @param file_path: path that contains all the csv files(each day, no break)
-        @param start_date: str, format: '20150925'
-        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
-        @param cat: exchange.csv_type
-        @return: file names list
-        """
-
-        file_list = sorted(os.listdir(file_path))
-        for x in file_list.copy():
-            if x[-4:] != '.csv':
-                file_list.remove(x)
-
-        if not cat[:6] == 'BITMEX':
-            return file_list
-
-        if start_date:
-            if pd.to_datetime(file_list[0][6:-4]) < pd.to_datetime(start_date):
-                while len(file_list) > 0:
-                    if file_list[0][6:-4] == start_date:
-                        break
-                    file_list.pop(0)
-        if end_date:
-            if pd.to_datetime(file_list[-1][6:-4]) > pd.to_datetime(end_date):
-                while len(file_list) > 0:
-                    if file_list[-1][6:-4] == end_date:
-                        file_list.pop(-1)  # end date is not included
-                        break
-                    file_list.pop(-1)
-
-        return file_list
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def bitmex_time_format_change(bitmex_time):
-        """Change the unfriendly bitmex time format!
-
-        @param bitmex_time: original timestamp Series from bitmex trade/quote data
-        @return: datetime64 timestamp Series.
-        """
-
-        bitmex_time = bitmex_time.str[:10] + ' ' + bitmex_time.str[11:]  # change the unfriendly time format!
-        timestamp_series = pd.to_datetime(bitmex_time)
-
-        return timestamp_series
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def get_kbar(df_kbar=pd.DataFrame(), data_path=None, unit='5t'):
-        """To get the K price DataFrame from a smaller unit K price csv.
-
-        @param df_kbar: a smaller unit K price DataFrame
-        @param data_path: a smaller unit K price csv
-        @param unit: pd.groupby() unit
-        @return: kbar DataFrame
-        """
-
-        if not df_kbar.empty:
-            if df_kbar.index.name == 'timestamp':
-                df_kbar.reset_index(inplace=True)
-        else:
-            if data_path:
-                df_kbar = pd.read_csv(data_path)
-            else:
-                print('Either df_kbar or data_path is required.')
-                return
-
-        df_kbar['timestamp'] = pd.to_datetime(df_kbar.timestamp)
-        df = df_kbar.groupby(pd.Grouper(key='timestamp', freq=unit)).agg({'price_start': 'first',
-                                                                          'price_end': 'last',
-                                                                          'price_max': 'max',
-                                                                          'price_min': 'min',
-                                                                          'volume': 'sum',
-                                                                          'ticks': 'sum'
-                                                                          })
-
-        return df
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def get_kbar_from_tick(file_path_trade, file_path_quote, unit, to_path=None, to_name=None, start_date=None,
-                           end_date=None, exchange='BITMEX', symbol='XBTUSD'):
-        """To get the K price DataFrame from tick price. Bitmex only. NO more than 1 day
-
-        @param file_path_trade: path that contains the trade csv files(fromt bitmex)
-        @param file_path_quote: path that contains the quote csv files(fromt bitmex)
-        @param unit: compress unit: example: '30s', 't', '15t', 'h', 'd'. No more than 1 Day.
-        @param to_path: path to save kbar csv file
-        @param to_name: csv file name
-        @param start_date: str, format: '20150925'
-        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
-        @param exchange: exchange
-        @param symbol: symbol
-        @return: compressed tick price DataFrame with columns:
-            timestamp  --note that it's the period start timestamp
-            price_start
-            price_end
-            price_max
-            price_min
-        """
-
-        if not exchange == 'BITMEX':
-            return
-
-        t0 = time.time()
-
-        # Two process for two data source
-        df_kbar, df_ticks = Tools.agg_cal(Tools.compress_distribute,
-                                          ('trade', file_path_trade, unit, start_date, end_date, symbol),
-                                          ('quote', file_path_quote, unit, start_date, end_date, symbol),
-                                          process_num=2)  # 我承认这种传参方式很奇葩。。。
-
-        df_kbar = pd.concat([df_kbar, df_ticks], axis=1, sort=False)
-        df_kbar.rename({'symbol': 'ticks'}, axis=1, inplace=True)
-
-        print('%.3f | kbar generated successfully.' % (time.time() - t0))
-
-        if to_path and to_name:
-            df_kbar.to_csv('%s/%s.csv' % (to_path, to_name))
-            print('%.3f | "%s" saved successfully to "%s".' % ((time.time() - t0), to_name, to_path))
-
-        return df_kbar
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def compress_trade(file_path_trade, unit, start_date, end_date, symbol):
-        """trade csv dealing: get basic price info"""
-
-        list_kbar = []
-        t0 = time.time()
-
-        file_list_trade = Tools.get_csv_names(file_path_trade, start_date=start_date, end_date=end_date, cat='BITMEX.trade')
-        for file in file_list_trade:
-
-            df_new = pd.read_csv('%s/%s' % (file_path_trade, file),
-                                 usecols=['timestamp', 'symbol', 'side', 'size', 'price'])
-            if symbol not in list(df_new['symbol']):
-                continue
-            df_new = df_new[df_new.symbol == symbol]
-            df_new.reset_index(drop=True, inplace=True)
-
-            df_new['timestamp'] = Tools.bitmex_time_format_change(df_new['timestamp'])
-            group_price = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit))).price
-            price_start = group_price.first()
-            price_end = group_price.last()
-            price_max = group_price.max()
-            price_min = group_price.min()
-            volume = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit)))['size'].sum()
-
-            df_g = pd.DataFrame(price_start)
-            df_g.rename({'price': 'price_start'}, axis=1, inplace=True)
-            df_g['price_end'] = price_end
-            df_g['price_max'] = price_max
-            df_g['price_min'] = price_min
-            df_g['volume'] = volume
-
-            list_kbar.append(df_g)
-
-            print('%.3f | "%s" included.' % ((time.time() - t0), file))
-
-        df_kbar = pd.concat(list_kbar, sort=False, ignore_index=False)
-
-        return df_kbar
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def compress_quote(file_path_quote, unit, start_date, end_date, symbol):
-        """quote csv dealing: get ticks count for each line(for flipage estimation)"""
-
-        list_ticks = []
-        t0 = time.time()
-
-        file_list_quote = Tools.get_csv_names(file_path_quote, start_date=start_date, end_date=end_date, cat='BITMEX.quote')
-        for file in file_list_quote:
-
-            df_new = pd.read_csv('%s/%s' % (file_path_quote, file),
-                                 usecols=['timestamp', 'symbol'])
-            if symbol not in list(df_new['symbol']):
-                continue
-            df_new = df_new[df_new.symbol == symbol]
-            df_new.reset_index(drop=True, inplace=True)
-
-            df_new['timestamp'] = Tools.bitmex_time_format_change(df_new['timestamp'])
-            ticks = df_new.groupby(pd.Grouper(key='timestamp', freq=('%s' % unit))).symbol.count()
-            df_ticks = pd.DataFrame(ticks)
-            list_ticks.append(df_ticks)
-
-            print('%.3f | "%s" ticks counted.' % ((time.time() - t0), file))
-
-        df_ticks = pd.concat(list_ticks, sort=False, ignore_index=False)
-
-        return df_ticks
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def compress_distribute(direct_to, file_path, unit, start_date, end_date, symbol):
-        result = None
-        if direct_to == 'trade':
-            result = Tools.compress_trade(file_path, unit, start_date, end_date, symbol)
-        elif direct_to == 'quote':
-            result = Tools.compress_quote(file_path, unit, start_date, end_date, symbol)
-
-        return result
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def tick_comp_price(file_path, start_date=None, end_date=None):
-        """Get the compressed traded tick price from file_path.
-
-        @param file_path: path that contains all the csv files(each day, no break) with columns:
-            timestamp
-            price
-        @param start_date: str, format: '20150925'
-        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
-        @param exchange: support only bitmex, for now
-        @return: compressed tick price DataFrame with columns:
-            timestamp
-            price
-        """
-
-        # get all target file names
-        file_list = Tools.get_csv_names(file_path, start_date=start_date, end_date=end_date)
-
-        list_df = []
-        for file in file_list:
-            df_add = pd.read_csv('%s/%s' % (file_path, file))
-            list_df.append(df_add)
-
-        df_tick_comp_price = pd.concat(list_df, ignore_index=True, sort=False)
-
-        return df_tick_comp_price
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def get_tick_comp_price(file_path, to_path=None, start_date=None, end_date=None, exchange='BITMEX',
-                            symbol='XBTUSD'):
-        """To get the compressed traded tick price from raw trade data in file_path.
-
-        @param file_path: path that contains all the raw trade csv files(support bitmex only, for now).
-        @param to_path: path to save csv file. None for not saving.
-        @param start_date: str, format: '20150925'
-        @param end_date: str, format: '20200101'. Note: end_day will NOT be included.
-        @param exchange: support bitmex only, for now.
-        @param symbol: trading target
-        @return: compressed tick price DataFrame with columns:
-            timestamp
-            price
-        """
-
-        if not exchange == 'BITMEX':
-            return
-
-        # close SettingWithCopyWarning
-        pd.set_option('mode.chained_assignment', None)
-
-        t0 = time.time()
-
-        list_tick_comp_price = []
-
-        # get all target file names
-        file_list = Tools.get_csv_names(file_path, start_date=start_date, end_date=end_date)
-
-        # read and compress all the files in file_path
-        for file in file_list:
-
-            df = pd.read_csv('%s/%s' % (file_path, file), usecols=['timestamp', 'symbol', 'price', 'tickDirection'])
-            if symbol not in list(df['symbol']):
-                continue
-
-            df = df[df.symbol == symbol]
-            df.reset_index(inplace=True, drop=True)
-            df['timestamp'] = Tools.bitmex_time_format_change(df['timestamp'])
-            df = df[
-                (df.tickDirection == 'PlusTick') | (
-                            df.tickDirection == 'MinusTick')]  # keep only lines that price changed
-
-            # 仅保留同方向连续吃两笔以上的tick --因为后续 limit order 成交的判断依据是：越过limit价格
-            df['tickDirection_old'] = np.append(np.nan, df['tickDirection'][:-1])
-            df['keep'] = 1
-            df['keep'][df.tickDirection != df.tickDirection_old] = 0
-            df.iloc[0, -1] = 1  # keep first line
-            df = df[df['keep'] == 1]
-
-            df.drop(['symbol', 'tickDirection', 'tickDirection_old', 'keep'], axis=1, inplace=True)
-
-            list_tick_comp_price.append(df)
-            print('%.3f | file "%s" included.' % ((time.time() - t0), file))
-
-            # save csv files to to_path(folder)
-            if to_path:
-                df.to_csv(('%s/%s' % (to_path, file)), index=False)  # the same file name.
-                print('%.3f | file "%s" saved to "%s".' % ((time.time() - t0), file, to_path))
-
-        df_tick_comp_price = pd.concat(list_tick_comp_price)
-        df_tick_comp_price.reset_index(drop=True, inplace=True)
-
-        print('%.3f | trade tick price compressed successfully.' % (time.time() - t0))
-
-        # reopen SettingWithCopyWarning
-        pd.set_option('mode.chained_assignment', 'warn')
-
-        return df_tick_comp_price
 
 
 if __name__ == '__main__':

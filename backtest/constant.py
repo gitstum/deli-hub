@@ -1,8 +1,7 @@
-#--coding:utf-8--
+# --coding:utf-8--
 
 from enum import Enum
 import numpy as np
-
 
 
 class Direction(Enum):
@@ -37,7 +36,6 @@ class OrderType(Enum):
 
 
 class OrderFee(Enum):
-
     MAKER = 0.0001
     TAKER = -0.00075
 
@@ -88,28 +86,65 @@ POS_START = 0
 # Default distance(to tick price) for limit order
 LIMIT_DISTANCE = 0.5  # the bigger the safer but harder to get traded
 
+
 # ---------------------------------------------------------------------------------------------------------
 
-# Method Category
-
 class Method(Enum):
-    """合并成pos_should信号的方法"""
+    """合并成pos_should信号的方法  Method Category
+    相关函数：
+        Tools.sig_to_one()
+        Tools.各方法名字对应的函数()
+    """
 
-    ALL = ['comb_sum1', 'comb_vote1', 'comb_min1',
-           'perm_add1', 'perm_add2', 'perm_cut1']
+    ALL = ['cond_1', 'cond_2',
+           'comb_sum', 'comb_vote1', 'comb_vote2', 'comb_vote3', 'comb_min',
+           'perm_cond', 'perm_add', 'perm_sub', 'perm_up', 'perm_down']
+
+    #
+    CONDITION = ['cond_1',  # 在满足a(0/1)条件(1)的条件下，使用b的pos_should，其余0 【限2列】
+                 'cond_2'  # 在满足a方向（正负，对比0）的条件下，使用同方向（正负）的b的pos_should，其余0 【限2列】
+                 ]
 
     # 组合求解
-    COMBINATION = ['comb_sum1',  # 对各列signal进行加和
-                   'comb_vote1',  # 使用各列signal投票 （-1/0/1）
-                   'comb_min1'  # 多/空方向：取各列signal中绝对值最小的，以做多/空
+    COMBINATION = ['comb_sum',  # 对各列signal进行加和
+                   'comb_vote1',  # 使用各列signal投票，加和，输出为：-1/0/1
+                   'comb_vote2',  # 使用各列signal投票，须无反对票，输出为：-1/0/1
+                   'comb_vote3',  # 使用各列signal投票，须全票通过，输出为：-1/0/1
+                   'comb_min'  # 多/空方向：取各列signal中最小/最大的（以做多/空）。如sig含有相反符号，则返回0（可用于判断）
                    ]
 
-    # 排列求解：按序处理signal列，求得单列pos_should
-    PERMUTATION = ['perm_add1',  # 多/空方向：减小/增加的signal，后续signal可加回/减去
-                   'perm_add2',  # 多/空方向：限同号（正负）：减小/增加的signal，后续signal可加回/减去，出现0或符号变化则为0
-                   'perm_cut1'  # 多/空方向：一旦signal减小/增加, 不可加回/减去，直至归0
+    # 排列求解：按序依次判断（/比较）
+    PERMUTATION = ['perm_cond',  # 在满足a方向（正负，对比0）的条件下，使用同方向（正负）的b的pos_should，其余0 【限2列】
+                   'perm_cond2',  # 在满足a条件（0/1）的情况下，使用b的pos_should，其余0  【限2列】
+                   'perm_add',  # 一直涨，sig值越来越大:1，否则0
+                   'perm_sub',  # 一直跌，sig值越来越小:1， 否则0
+                   'perm_up',  # sig值震荡（含持平）上涨：1，否则0
+                   'perm_down'  # sig值震荡（含持平）下跌：1，否则0
                    ]
 
+
+# ---------------------------------------------------------------------------------------------------------
+
+class Classifier(Enum):
+    """ 将特征、指标转化为分类器
+
+  """
+
+    CATES = ['origin',  # 有含义的原始数据，价格、交易量等等
+             'real',  # 负无穷到正无穷
+             'abs',  # 0到正无穷
+             'normal_real',  # 负无穷到正无穷, 标准化
+             'normal_abs'  # 0到正无穷 标准化
+             ]  # Classifier Category
+
+    FUNCTIONS = ['cut_number',  # 自切割，常量切割
+                 'cut_rank',  # 自切割，百分比排名切割
+                 'cut_sigma',  # 自切割，sigma比例切割
+                 'cut_distance',  # 自切割，全距比例切割
+
+                 'compare_distance',  # 比较feature差值，绝对距离（比大小：距离为0）
+                 'compare_sigma'  # 比较feature差值，平均标准差比例（比大小：比例为0）
+                 ]
 
 
 
@@ -117,9 +152,3 @@ if __name__ == '__main__':
     print(Direction.SHORT.value)
     print(Direction.SHORT)
     print(CAPITAL)
-
-
-
-
-
-
