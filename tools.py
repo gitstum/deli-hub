@@ -70,6 +70,93 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def mutate_value_map(node_data, *, mut_pb=0.25,  cut_pb=0.1, delete_pb=0.1, merge_pb=0.2, add_pb=0.1):
+        """
+        @param node_data: dict of the node in node_map, include:
+            - 'value_map' to get mutated.
+            - 'map_type' to direct the mutation.
+            - 'classify_args' to be changed if any mutation happened on value_map.
+        @param mut_pb: probability of any  mutation happened.
+        @param merge_pb: probability of merging 2(or more) same value into 1 value.
+        @param cut_pb: probability of cutting 1 value into 2. ('classify_args' cut at random distance)
+        @param delete_pb: probability of deleting the value between 2 same value.
+        @param add_pb: probability of adding a 0 value betweent -1 & 1 (for 'vector' map_type only)
+        @return: True for any mutation happened for value_map(and classify_args)
+
+        NOTE: inplace. all pb are independent.
+        """
+
+        changed_tag = False
+
+        # value_map 赋值变异 --mut_pb
+
+        value_map = node_data['value_map'].copy()
+        value_map_new = node_data['value_map'].copy()
+        map_type = node_data['map_type']
+
+        mut_pb_each = 1 - (1 - mut_pb) ** (1 / len(value_map))  # 各元素发生变异的独立概率
+
+        n = 0
+        for value in value_map:
+            if random.random() < mut_pb_each:
+                new_value = Tools.mutate_one_value_in_map(value, map_type=map_type)
+                value_map_new[n] = new_value
+                changed_tag = True
+            n += 1
+
+        node_data['value_map'] = value_map_new
+
+        # value_map 数目增加 --cut_pb
+
+        # value_map 同值间异类剔除【半优化】  --delete_pb
+
+        # value_map 连续同值合并【优化】 --merge_pb
+
+        # value_map 跳值平滑【优化】  --add_pb
+
+
+        return changed_tag
+
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mutate_one_value_in_map(value, *, map_type='vector', jump_pb=0):
+
+        bracket = []
+        
+        if map_type == 'vector':
+            bracket = [-1, 0, 1]  # value的值域
+            if value == 0:
+                if random.random() < 0.5:
+                    new_value = -1
+                else:
+                    new_value = 1
+            else:
+                if random.random < jump_pb:
+                    if value < 0:
+                        new_value = 1
+                    else:
+                        new_value = -1
+                else:
+                    new_value = 0
+
+        elif map_type == 'cond' or map_type == 'condition':
+            bracket = [0, 1]
+            if value != 0:
+                new_value = 0
+            else:
+                new_value = 1
+
+        if not bracket:
+            print('error 5687')
+            return value
+
+        return new_value
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def get_node_id():
         """获取节点的唯一ID"""
 
@@ -102,20 +189,20 @@ class Tools(object):
 
         # 获得命名
         if not letter_list:
-            node_name = NODE_NAME_LIST[0]  # 母节点还未有任何子节点
+            node_letter = NODE_LETTER_LIST[0]  # 母节点还未有任何子节点
 
         else:
             max_index = 0
             for i in letter_list:
-                max_index = max(max_index, NODE_NAME_LIST.index(i))
+                max_index = max(max_index, NODE_LETTER_LIST.index(i[:1]))
 
             new_index = max_index + 1
-            if new_index >= len(NODE_NAME_LIST):
-                node_name = None  # “兄弟”数量已太多，超出命名区间
+            if new_index >= len(NODE_LETTER_LIST):
+                node_letter = None  # “兄弟”数量已太多，超出命名区间
             else:
-                node_name = NODE_NAME_LIST[new_index]
+                node_letter = NODE_LETTER_LIST[new_index]
 
-        return node_name
+        return node_mother_name + node_letter
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -184,7 +271,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def compare_distance(feature1, feature2, *sub_edge, window=0):
+    def compare_distance(*sub_edge, feature1, feature2, window=0):
         """特征分类函数，差值对比，绝对距离（比大小：距离为0）  (缺点在于步长个性化太强，需要单独设置参数)
 
         @param sub_edge: the value which differs the subtract result. (NOTE: negative for feature1 < feature2!)
@@ -211,7 +298,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def compare_sigma(feature1, feature2, *sigma_edge, window=0):
+    def compare_sigma(*sigma_edge, feature1, feature2, window=0):
         """特征分类函数，差值对比，平均标准差比例对比（比大小：比例为0）
 
         @param sigma_edge: the sigma value which differs the subtract result. (NOTE: negative for feature1 < feature2!)
@@ -251,7 +338,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def cut_number(feature, *cut_points, window=0):
+    def cut_number(*cut_points, feature, window=0):
         """特征分类函数，自切割，常量切割  (缺点在于步长个性化太强，需要单独设置参数)
 
         @param feature: feature Series (timestamp index) to be cut
@@ -274,7 +361,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def cut_distance(feature, *cut_points, window=0):
+    def cut_distance(*cut_points, feature, window=0):
         """特征分类函数，自切割，数值线性比例切割  (缺点在于不适应长尾，步长设置困难)
 
         @param feature: feature Series (timestamp index) to be cut
@@ -311,7 +398,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def cut_rank(feature, *cut_percents, window=0):
+    def cut_rank(*cut_percents, feature, window=0):
         """特征分类函数，自切割，分布数量比例切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
 
         @param feature: feature Series (timestamp index) to be cut
@@ -345,7 +432,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def cut_sigma(feature, *cut_sigmas, window=0):
+    def cut_sigma(*cut_sigmas, feature, window=0):
         """特征分类函数，自切割，分布标准倍数切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
 
         @param feature: feature Series (timestamp index) to be cut
@@ -393,7 +480,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def cond_1(cond, pos_should):
+    def cond_1(*, cond, pos_should):
         """CONDITION method: 0/1 condition
         ---在满足a(0/1)条件(1)的条件下，使用b的pos_should，其余0 【限2列】
 
@@ -418,7 +505,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def cond_2(cond, pos_should):
+    def cond_2(*, cond, pos_should):
         """CONDITION method: -1/0/1 condition
         ---在满足cond方向（正负，对比0）的条件下，pos_should如同方向（正负），使用其值，其余为0 【限2列】
 
@@ -467,7 +554,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def sig_weight(signal, weight):
+    def sig_weight(*, signal, weight):
         """Return a weighted pos_should signal Series.
 
         @param signal: a signal Series
