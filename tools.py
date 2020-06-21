@@ -66,11 +66,11 @@ class Tools(object):
 
         return now
 
-    # 基因树 相关函数 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # 基因树 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value_map(node_data, *, mut_pb=0.25,  cut_pb=0.1, delete_pb=0.1, merge_pb=0.2, add_pb=0.1):
+    def mutate_value_map(node_data, *, mut_pb=0.25,  cut_pb=0.05, delete_pb=0.1, merge_pb=0.2, add_pb=0.1):
         """
         @param node_data: dict of the node in node_map, include:
             - 'value_map' to get mutated.
@@ -86,16 +86,56 @@ class Tools(object):
         NOTE: inplace. all pb are independent.
         """
 
+        # TODO: test it.
+
         changed_tag = False
 
-        # value_map 赋值变异 --mut_pb
-
-        value_map = node_data['value_map'].copy()
+        value_map = node_data['value_map']  # not copy here~
         value_map_new = node_data['value_map'].copy()
+        classify_edge = node_data['classify_args']
+        classify_edge_new = node_data['classify_args'].copy()
+        classify_sep = node_data['classify_args_sep']
+        classify_addable = node_data['classify_args_addable']  # NOTE!!!!!!!!!!!!!!!!!!!!!!!!
         map_type = node_data['map_type']
 
-        mut_pb_each = 1 - (1 - mut_pb) ** (1 / len(value_map))  # 各元素发生变异的独立概率
+        # 注意，下面5项的顺序是有考虑的，不要随意改变先后次序
+        # 1. value_map 连续同值合并【优化】 --merge_pb
 
+        merge_order_list = []
+        old_value = None
+        num = 0
+        for value in value_map:
+            if not old_value:
+                old_value = value
+                num += 1
+                continue
+            if value == old_value:
+                merge_order_list.append(num)  # 记录相同赋值的后者的下标
+            old_value = value
+            num += 1
+
+        if merge_order_list:
+            merge_pb_each = Tools.probability_each(object_num=len(merge_order_list),
+                                                   pb_for_all=merge_pb)
+            for i in merge_order_list:
+                if random.random() < merge_pb_each:
+                    value_map_new.pop(i)
+                    classify_edge_new.pop(i - 1)  # 相同赋值的后者的下标，对应于前一个下标的切割器
+                    changed_tag = True
+
+            node_data['value_map'] = value_map_new.copy()
+            node_data['classify_args'] = classify_edge_new.copy()
+
+        # 2. value_map 跳值平滑【优化】  --add_pb
+
+        # 3. value_map 同值间异类剔除【半优化】  --delete_pb
+
+        # 4. value_map 数目增加 --cut_pb
+
+        # 5. value_map 赋值变异 --mut_pb
+
+        mut_pb_each = Tools.probability_each(object_num=len(value_map),
+                                             pb_for_all=mut_pb)  # 各元素发生变异的独立概率
         n = 0
         for value in value_map:
             if random.random() < mut_pb_each:
@@ -104,19 +144,54 @@ class Tools(object):
                 changed_tag = True
             n += 1
 
-        node_data['value_map'] = value_map_new
-
-        # value_map 数目增加 --cut_pb
-
-        # value_map 同值间异类剔除【半优化】  --delete_pb
-
-        # value_map 连续同值合并【优化】 --merge_pb
-
-        # value_map 跳值平滑【优化】  --add_pb
-
 
         return changed_tag
 
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cal_event_pb(*args):
+        """根据传入的独立概率事件，返回: 全部发生的概率，至少一个发生的概率，没有一个发生的概率"""
+
+        all_happen_pb = 1
+        no_happen_pb = 1
+
+        for pb in args:
+
+            all_happen_pb = all_happen_pb * pb
+            no_happen_pb = no_happen_pb * (1 - pb)
+
+        any_happen_pb = 1 - no_happen_pb
+
+        result = dict(all_happen_pb=all_happen_pb,
+                      any_happen_pb=any_happen_pb,
+                      no_happen_pb=no_happen_pb)
+
+        return result
+
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def probability_each(*, object_num, pb_for_all, pb_type='any'):
+        """已知一系列事件的总概率（任一发生、全都发生），返回系列中每一个事件发生的概率。
+
+        @param object_num: number of small event in the big event.
+        @param pb_for_all: the probability of the big event
+        @param pb_type:
+            - any small event happen, the big event happen: "any"
+            - all small event happen, the big event happen: "all"
+        @return:
+        """
+
+        if pb_type == 'any':
+            pb_for_each = 1 - (1 - pb_for_all) ** (1 / object_num)
+        elif pb_type == 'all':
+            pb_for_each = pb_for_all ** (1 / object_num)
+        else:
+            return
+
+        return pb_for_each
 
     # -----------------------------------------------------------------------------------------------------------------
 
