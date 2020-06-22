@@ -70,17 +70,17 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value_map(node_data, *, mut_pb=0.25,  cut_pb=0.05, delete_pb=0.1, merge_pb=0.2, add_pb=0.1):
+    def mutate_value_map(node_data, *, mut_pb=0.25,  cut_pb=0.05, clear_pb=0.05, merge_pb=0.15, smooth_pb=0.1):
         """
         @param node_data: dict of the node in node_map, include:
-            - 'value_map' to get mutated.
-            - 'map_type' to direct the mutation.
-            - 'classify_args' to be changed if any mutation happened on value_map.
+            - 'value_map': the LIST to get mutated.
+            - 'map_type': to direct the mutation.
+            - 'classify_args': to be changed if any mutation happened on value_map.
         @param mut_pb: probability of any  mutation happened.
         @param merge_pb: probability of merging 2(or more) same value into 1 value.
         @param cut_pb: probability of cutting 1 value into 2. ('classify_args' cut at random distance)
-        @param delete_pb: probability of deleting the value between 2 same value.
-        @param add_pb: probability of adding a 0 value betweent -1 & 1 (for 'vector' map_type only)
+        @param clear_pb: probability of deleting the value between 2 same value.
+        @param smooth_pb: probability of adding a 0 value betweent -1 & 1 (for 'vector' map_type only)
         @return: True for any mutation happened for value_map(and classify_args)
 
         NOTE: inplace. all pb are independent.
@@ -88,64 +88,280 @@ class Tools(object):
 
         # TODO: test it.
 
-        changed_tag = False
-
-        value_map = node_data['value_map']  # not copy here~
-        value_map_new = node_data['value_map'].copy()
-        classify_edge = node_data['classify_args']
-        classify_edge_new = node_data['classify_args'].copy()
-        classify_sep = node_data['classify_args_sep']
+        mutation_tag = False
         classify_addable = node_data['classify_args_addable']  # NOTE!!!!!!!!!!!!!!!!!!!!!!!!
         map_type = node_data['map_type']
 
-        # 注意，下面5项的顺序是有考虑的，不要随意改变先后次序
+        # 注意，下面5项的顺序是有考虑的，且完成一个到下一个，不要随意改变先后次序或合并
+
         # 1. value_map 连续同值合并【优化】 --merge_pb
+        if merge_pb:
+            merged = Tools.mutate_value_map_merge_same(node_data, merge_pb=merge_pb)
+            if merged:
+                mutation_tag = True
 
-        merge_order_list = []
-        old_value = None
-        num = 0
-        for value in value_map:
-            if not old_value:
-                old_value = value
-                num += 1
-                continue
-            if value == old_value:
-                merge_order_list.append(num)  # 记录相同赋值的后者的下标
-            old_value = value
-            num += 1
+        # 2. value_map 跳值平滑【优化】  --smooth_pb
+        if map_type == 'vector' and classify_addable and smooth_pb:
+            smoothed = Tools.mutate_value_map_jump_smooth(node_data, smooth_pb=smooth_pb)
+            if smoothed:
+                mutation_tag = True
 
-        if merge_order_list:
-            merge_pb_each = Tools.probability_each(object_num=len(merge_order_list),
-                                                   pb_for_all=merge_pb)
-            for i in merge_order_list:
-                if random.random() < merge_pb_each:
-                    value_map_new.pop(i)
-                    classify_edge_new.pop(i - 1)  # 相同赋值的后者的下标，对应于前一个下标的切割器
-                    changed_tag = True
-
-            node_data['value_map'] = value_map_new.copy()
-            node_data['classify_args'] = classify_edge_new.copy()
-
-        # 2. value_map 跳值平滑【优化】  --add_pb
-
-        # 3. value_map 同值间异类剔除【半优化】  --delete_pb
+        # 3. value_map 同值间异类剔除【半优化】  --clear_pb
+        if clear_pb:
+            cleared = Tools.mutate_value_map_clear_between(node_data, clear_pb=clear_pb)
+            if cleared:
+                mutation_tag = True
 
         # 4. value_map 数目增加 --cut_pb
+        if classify_addable and cut_pb:
+            cut = Tools.mutate_value_map_cut_within(node_data, cut_pb=cut_pb)
+            if cut:
+                mutation_tag = True
 
-        # 5. value_map 赋值变异 --mut_pb
+        # 5. value_map 赋值变异 --mut_pb  (这一步才是这个函数正儿八经最应该做的事情）
+
+        value_map = node_data['value_map']
+        value_map_new = node_data['value_map'].copy()
 
         mut_pb_each = Tools.probability_each(object_num=len(value_map),
                                              pb_for_all=mut_pb)  # 各元素发生变异的独立概率
+        
         n = 0
         for value in value_map:
             if random.random() < mut_pb_each:
                 new_value = Tools.mutate_one_value_in_map(value, map_type=map_type)
                 value_map_new[n] = new_value
-                changed_tag = True
+                mutation_tag = True
             n += 1
 
+        return mutation_tag
 
-        return changed_tag
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mutate_value_map_cut_within(node_data, *, cut_pb, add_zoom_mul=1.5):
+        """value_map 数目增加：通过将某段赋值切开（但赋值仍相同）
+
+        注：这个功能在lv4 中有重复，且更科学（所以这里的概率设置低一些）
+        """
+
+        # TODO: test it.
+
+        value_map_new = node_data['value_map'].copy()
+        classify_edge_new = node_data['classify_args'].copy()
+        shortest_zoom = node_data['classify_args_short_edge']
+        add_border_zoom = node_data['classify_args_short_edge'] * add_zoom_mul  # 如新增在两端，用此确定切割的edge值
+
+        cut_tag_list = list(range(len(value_map_new)))  # 这里，所有的都有可能被切割
+
+        cut_pb_each = Tools.probability_each(object_num=len(cut_tag_list),
+                                             pb_for_all=cut_pb)
+    
+        add_num = 0
+        for i in cut_tag_list:
+            if random.random() < cut_pb_each:
+
+                if i == 0:
+                    new_edge = value_map_new[0] - add_border_zoom
+
+                elif i == (len(cut_tag_list) - 1):
+                    new_edge = value_map_new[-1] + add_border_zoom
+
+                else:
+                    edge_before = classify_edge_new[i + add_num - 1]
+                    edge_after = classify_edge_new[i + add_num]
+                    if abs(edge_after - edge_before) < shortest_zoom:
+                        print('zoom too short, no cut within. 1965')
+                        new_edge = None
+                    else:
+                        new_edge = (edge_before + edge_after) / 2
+
+                if new_edge is not None:
+                    
+                    classify_edge_new.insert(i, new_edge)
+                    add_value = value_map_new[i + add_num]
+                    value_map_new.insert(i + add_num, add_value)  # 仅仅切割开，并不改变赋值
+                    
+                    add_num += 1
+
+        if value_map_new == node_data['value_map']:
+            return False
+
+        else:
+            # sorted(classify_edge_new)  # 记得要排序一下！
+            node_data['value_map'] = value_map_new.copy()
+            node_data['classify_args'] = classify_edge_new.copy()
+
+            return True
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mutate_value_map_clear_between(node_data, *, clear_pb):
+        """value_map 同值间异类剔除【半优化】
+
+        注：这个功能在lv4 中有重复，且更科学（所以这里的概率设置低一些）
+        """
+
+        # TODO: test it.
+
+        value_map_new = node_data['value_map'].copy()
+        classify_edge_new = node_data['classify_args'].copy()
+
+        clear_order_list =[]
+        last_value_1 = None  # last value in value_map
+        last_value_2 = None  # last value of the last value
+
+        num = -1  # NOTE, different here.
+        for value in value_map_new:
+
+            if last_value_2 == value:  # 前前一个等于当前
+                clear_order_list.append(num)
+
+            last_value_2 = last_value_1
+            last_value_1 = value
+            num += 1
+
+        if not clear_order_list:
+            return False  # 不存在同值间异
+
+        clear_pb_each = Tools.probability_each(object_num=len(clear_order_list),
+                                               pb_for_all=clear_pb)
+
+        pop_num = 0
+        for i in clear_order_list:
+            if random.random() < clear_pb_each:
+
+                value_map_new.pop(i - pop_num)  # 清除中间值，两头值并没有合并
+                
+                old_edge_before = classify_edge_new[i - pop_num - 1]
+                old_edge_after = classify_edge_new[i - pop_num]
+                new_edge_value = (old_edge_before + old_edge_after) / 2  # 这里的做法是将中间切开分给两头
+
+                classify_edge_new.pop(i - pop_num)
+                classify_edge_new.pop(i - pop_num - 1)
+                classify_edge_new.insert(i - pop_num - 1, new_edge_value)
+
+                pop_num += 1
+
+        if value_map_new == node_data['value_map']:
+            return False
+            
+        else:
+            # sorted(classify_edge_new)  # 记得要排序一下！
+            node_data['value_map'] = value_map_new.copy()
+            node_data['classify_args'] = classify_edge_new.copy()
+
+            return True
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mutate_value_map_jump_smooth(node_data, *, smooth_pb, smooth_zoom_mul=1.5):
+        """value_map 跳值平滑（插入）【优化】
+
+        @param node_data:
+        @param smooth_pb:
+        @param smooth_zoom_mul: lv4 mutation 中抹掉分类的临界值的倍数
+        """
+
+        # TODO: test it.
+
+        value_map_new = node_data['value_map'].copy()
+        classify_edge_new = node_data['classify_args'].copy()
+        add_zoom = node_data['classify_args_short_edge'] * smooth_zoom_mul  # 这里的做法是，预先设定zoom值（固定），插入
+
+        add_tag_list = []
+        last_value_1 = None  # last value in value_map
+
+        num = 0
+
+        for value in value_map_new:
+
+            if last_value_1 is None:
+                last_value_1 = value 
+                num += 1
+                continue
+
+            if value * last_value_1 < 0:
+                add_tag_list.append(num)
+
+            last_value_1 = value
+            num += 1
+
+        if not add_tag_list:
+            return False  # 不存在跳值
+
+        smooth_pb_each = Tools.probability_each(object_num=len(add_tag_list),
+                                                pb_for_all=smooth_pb)
+
+        add_num = 0
+        for i in add_tag_list:
+            if random.random() < smooth_pb_each:
+                value_map_new.insert(i + add_num, 0)  # 插入0到符号变化之间，以平滑
+
+                arg_tag = i + add_num - 1
+                old_edge = classify_edge_new[i - 1]
+                new_edge_before = old_edge - add_zoom / 2  # 后期可考虑动态调整zoom值
+                new_edge_after = old_edge + add_zoom / 2
+
+                classify_edge_new.pop(arg_tag)
+                classify_edge_new.insert(arg_tag, new_edge_after)
+                classify_edge_new.insert(arg_tag, new_edge_before)
+
+        if value_map_new == node_data['value_map']:
+            return False
+            
+        else:
+            # sorted(classify_edge_new)  # 记得要排序一下！
+            node_data['value_map'] = value_map_new.copy()
+            node_data['classify_args'] = classify_edge_new.copy()
+
+            return True
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mutate_value_map_merge_same(node_data, *, merge_pb):
+        """value_map 连续同值合并【优化】"""
+
+        # TODO test it.
+
+        value_map_new = node_data['value_map'].copy()
+        classify_edge_new = node_data['classify_args'].copy()
+
+        merge_tag_list = []
+        last_value_1 = None  # last value in value_map
+
+        num = 0
+        for value in value_map_new:
+            if value == last_value_1:
+                merge_tag_list.append(num)  # 记录相同赋值的后者的下标
+            last_value_1 = value
+            num += 1
+
+        if not merge_tag_list:
+            return False  # 不存连续部分
+
+        merge_pb_each = Tools.probability_each(object_num=len(merge_tag_list),
+                                               pb_for_all=merge_pb)
+
+        pop_num = 0
+        for i in merge_tag_list:
+            if random.random() < merge_pb_each:
+                value_map_new.pop(i - pop_num)
+                classify_edge_new.pop(i - pop_num - 1)  # 相同赋值的后者的下标，对应于前一个下标的切割器
+                pop_num += 1
+
+        if value_map_new == node_data['value_map']:
+            return False
+            
+        else:
+            # sorted(classify_edge_new)  # 记得要排序一下！
+            node_data['value_map'] = value_map_new.copy()
+            node_data['classify_args'] = classify_edge_new.copy()
+
+            return True
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -168,7 +384,6 @@ class Tools(object):
                       no_happen_pb=no_happen_pb)
 
         return result
-
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -196,7 +411,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_one_value_in_map(value, *, map_type='vector', jump_pb=0):
+    def mutate_one_value_in_map(value, *, map_type='vector', jump_pb=0.1):
 
         bracket = []
         
