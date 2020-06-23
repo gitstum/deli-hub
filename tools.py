@@ -53,7 +53,11 @@ class Tools(object):
 
     @staticmethod
     def str_time(f=6):
-        """获取str时间信息。f: 保留几位小数。"""
+        """获取str时间信息
+
+        @param f: 秒后要保留的小数位
+        @return: str时间
+        """
 
         if f == 0: f = -1
         f -= 6
@@ -66,11 +70,28 @@ class Tools(object):
 
         return now
 
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def keep_float(number, float_num):
+        """float简化：保留小数点后x位
+
+        @param number: 要化简的数
+        @param float_num: 要保留的小数位
+        @return: 化简后的数
+        """
+
+        number = number * 10 ** float_num
+        number = int(number)
+        number = number / 10 ** float_num
+
+        return number
+
     # 基因树 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value_map(node_data, *, mut_pb=0.25,  cut_pb=0.05, clear_pb=0.05, merge_pb=0.15, smooth_pb=0.1):
+    def mutate_value_map(node_data, *, mut_pb=0.25, jump_pb=0.1, cut_pb=0.05, clear_pb=0.05, merge_pb=0.15, smooth_pb=0.1):
         """
         @param node_data: dict of the node in node_map, include:
             - 'value_map': the LIST to get mutated.
@@ -89,34 +110,39 @@ class Tools(object):
         # TODO: test it.
 
         mutation_tag = False
-        classify_addable = node_data['classify_args_addable']  # NOTE!!!!!!!!!!!!!!!!!!!!!!!!
-        map_type = node_data['map_type']
+        classify_addable = node_data['classify_args_addable']  # NOTE!!!!!!!!!!!!!!!!!!!!!!!! 
+        map_type = node_data['map_type'] 
+        classify_edge = node_data['classify_args']  # 分类的切割点边界值 
 
         # 注意，下面5项的顺序是有考虑的，且完成一个到下一个，不要随意改变先后次序或合并
 
         # 1. value_map 连续同值合并【优化】 --merge_pb
-        if merge_pb:
+        if merge_pb and len(classify_edge) > 1:
             merged = Tools.mutate_value_map_merge_same(node_data, merge_pb=merge_pb)
             if merged:
                 mutation_tag = True
+                # print('merged')
 
         # 2. value_map 跳值平滑【优化】  --smooth_pb
         if map_type == 'vector' and classify_addable and smooth_pb:
             smoothed = Tools.mutate_value_map_jump_smooth(node_data, smooth_pb=smooth_pb)
             if smoothed:
                 mutation_tag = True
+                # print('smoothed')
 
         # 3. value_map 同值间异类剔除【半优化】  --clear_pb
         if clear_pb:
             cleared = Tools.mutate_value_map_clear_between(node_data, clear_pb=clear_pb)
             if cleared:
                 mutation_tag = True
+                # print('cleared')
 
         # 4. value_map 数目增加 --cut_pb
         if classify_addable and cut_pb:
             cut = Tools.mutate_value_map_cut_within(node_data, cut_pb=cut_pb)
             if cut:
                 mutation_tag = True
+                # print('cut')
 
         # 5. value_map 赋值变异 --mut_pb  (这一步才是这个函数正儿八经最应该做的事情）
 
@@ -125,14 +151,18 @@ class Tools(object):
 
         mut_pb_each = Tools.probability_each(object_num=len(value_map),
                                              pb_for_all=mut_pb)  # 各元素发生变异的独立概率
-        
+
         n = 0
         for value in value_map:
             if random.random() < mut_pb_each:
-                new_value = Tools.mutate_one_value_in_map(value, map_type=map_type)
+                new_value = Tools.mutate_one_value_in_map(value, map_type=map_type, jump_pb=jump_pb)
                 value_map_new[n] = new_value
-                mutation_tag = True
             n += 1
+
+        if value_map_new != value_map:
+            node_data['value_map'] = value_map_new.copy()
+            mutation_tag = True
+            # print('value_changed.')
 
         return mutation_tag
 
@@ -145,50 +175,59 @@ class Tools(object):
         注：这个功能在lv4 中有重复，且更科学（所以这里的概率设置低一些）
         """
 
-        # TODO: test it.
+        classify_edge_new = node_data['classify_args'].copy()
+        if not classify_edge_new:
+            return False  # 缺乏切割的参考edge值，会导致出错。
 
         value_map_new = node_data['value_map'].copy()
-        classify_edge_new = node_data['classify_args'].copy()
-        shortest_zoom = node_data['classify_args_short_edge']
-        add_border_zoom = node_data['classify_args_short_edge'] * add_zoom_mul  # 如新增在两端，用此确定切割的edge值
+        zoom_of_sep = node_data['classify_args_sep']
+        zoom_short_edge = node_data['classify_args_short_edge']
+        zoom_at_border = zoom_short_edge * add_zoom_mul  # 如新增在两端，用此确定切割的edge值
+        if zoom_short_edge < zoom_of_sep * 3:
+            zoom_short_edge = zoom_of_sep * 3  # 切割两端都需要至少（可等于）保留一个sep，故3
 
-        cut_tag_list = list(range(len(value_map_new)))  # 这里，所有的都有可能被切割
+        cut_tag_list = list(range(len(value_map_new)))
 
         cut_pb_each = Tools.probability_each(object_num=len(cut_tag_list),
                                              pb_for_all=cut_pb)
-    
+
         add_num = 0
         for i in cut_tag_list:
             if random.random() < cut_pb_each:
 
                 if i == 0:
-                    new_edge = value_map_new[0] - add_border_zoom
+                    new_edge = Tools.fit_to_minimal(classify_edge_new[0] - zoom_at_border,
+                                                    min_range=zoom_of_sep)
 
                 elif i == (len(cut_tag_list) - 1):
-                    new_edge = value_map_new[-1] + add_border_zoom
+                    new_edge = Tools.fit_to_minimal(classify_edge_new[-1] + zoom_at_border,
+                                                    min_range=zoom_of_sep)
 
                 else:
                     edge_before = classify_edge_new[i + add_num - 1]
                     edge_after = classify_edge_new[i + add_num]
-                    if abs(edge_after - edge_before) < shortest_zoom:
-                        print('zoom too short, no cut within. 1965')
+                    cut_zoom = abs(edge_after - edge_before)
+                    if cut_zoom < zoom_short_edge:
+                        print('zoom too short, no cut within. issue: 1965')
                         new_edge = None
                     else:
-                        new_edge = (edge_before + edge_after) / 2
+                        cut_zoom = cut_zoom - 2 * zoom_of_sep  # 保留sep后的真实可切割空间
+                        # new_edge = (edge_before + edge_after) / 2  # 最简单的方式是取中间值，但不够随机
+                        new_edge = Tools.fit_to_minimal(edge_before + zoom_of_sep + cut_zoom * random.random(),
+                                                        min_range=zoom_of_sep)  # 升级版处理方式：保留sep的随机切割
 
                 if new_edge is not None:
-                    
                     classify_edge_new.insert(i, new_edge)
                     add_value = value_map_new[i + add_num]
                     value_map_new.insert(i + add_num, add_value)  # 仅仅切割开，并不改变赋值
-                    
+
                     add_num += 1
 
         if value_map_new == node_data['value_map']:
             return False
 
         else:
-            # sorted(classify_edge_new)  # 记得要排序一下！
+            sorted(classify_edge_new)  # 记得要排序一下！
             node_data['value_map'] = value_map_new.copy()
             node_data['classify_args'] = classify_edge_new.copy()
 
@@ -203,19 +242,18 @@ class Tools(object):
         注：这个功能在lv4 中有重复，且更科学（所以这里的概率设置低一些）
         """
 
-        # TODO: test it.
-
         value_map_new = node_data['value_map'].copy()
         classify_edge_new = node_data['classify_args'].copy()
+        zoom_of_sep = node_data['classify_args_sep']
 
-        clear_order_list =[]
+        clear_order_list = []
         last_value_1 = None  # last value in value_map
         last_value_2 = None  # last value of the last value
 
         num = -1  # NOTE, different here.
         for value in value_map_new:
 
-            if last_value_2 == value:  # 前前一个等于当前
+            if last_value_2 == value:  # 前前一个等于当前 --既包括中间异类，也包括中间同类
                 clear_order_list.append(num)
 
             last_value_2 = last_value_1
@@ -227,28 +265,30 @@ class Tools(object):
 
         clear_pb_each = Tools.probability_each(object_num=len(clear_order_list),
                                                pb_for_all=clear_pb)
-
         pop_num = 0
         for i in clear_order_list:
             if random.random() < clear_pb_each:
 
-                value_map_new.pop(i - pop_num)  # 清除中间值，两头值并没有合并
-                
                 old_edge_before = classify_edge_new[i - pop_num - 1]
                 old_edge_after = classify_edge_new[i - pop_num]
-                new_edge_value = (old_edge_before + old_edge_after) / 2  # 这里的做法是将中间切开分给两头
+                cut_zoom = old_edge_after - old_edge_before
+                new_edge_value = Tools.fit_to_minimal(old_edge_before + cut_zoom * random.random(),
+                                                      min_range=zoom_of_sep)  # 处理方式：随机切割
 
-                classify_edge_new.pop(i - pop_num)
-                classify_edge_new.pop(i - pop_num - 1)
-                classify_edge_new.insert(i - pop_num - 1, new_edge_value)
+                # 如在fit_to_minimal之后和两端相等，那就没法切割出有意义的赋值区间了
+                if old_edge_before < new_edge_value < old_edge_after:
+                    classify_edge_new.pop(i - pop_num)
+                    classify_edge_new.pop(i - pop_num - 1)
+                    classify_edge_new.insert(i - pop_num - 1, new_edge_value)
 
-                pop_num += 1
+                    value_map_new.pop(i - pop_num)  # 清除中间值，两头值并没有合并
+                    pop_num += 1
 
         if value_map_new == node_data['value_map']:
             return False
-            
+
         else:
-            # sorted(classify_edge_new)  # 记得要排序一下！
+            sorted(classify_edge_new)  # 记得要排序一下！
             node_data['value_map'] = value_map_new.copy()
             node_data['classify_args'] = classify_edge_new.copy()
 
@@ -265,11 +305,12 @@ class Tools(object):
         @param smooth_zoom_mul: lv4 mutation 中抹掉分类的临界值的倍数
         """
 
-        # TODO: test it.
-
         value_map_new = node_data['value_map'].copy()
         classify_edge_new = node_data['classify_args'].copy()
-        add_zoom = node_data['classify_args_short_edge'] * smooth_zoom_mul  # 这里的做法是，预先设定zoom值（固定），插入
+
+        # 这里的做法是，预先设定zoom值（固定），插入。后期可考虑动态调整zoom值(要考虑前后边界的情况：缺失、太窄等)
+        add_zoom = node_data['classify_args_short_edge'] * smooth_zoom_mul
+        zoom_of_sep = node_data['classify_args_sep']
 
         add_tag_list = []
         last_value_1 = None  # last value in value_map
@@ -279,7 +320,7 @@ class Tools(object):
         for value in value_map_new:
 
             if last_value_1 is None:
-                last_value_1 = value 
+                last_value_1 = value
                 num += 1
                 continue
 
@@ -302,8 +343,10 @@ class Tools(object):
 
                 arg_tag = i + add_num - 1
                 old_edge = classify_edge_new[i - 1]
-                new_edge_before = old_edge - add_zoom / 2  # 后期可考虑动态调整zoom值
-                new_edge_after = old_edge + add_zoom / 2
+                new_edge_before = Tools.fit_to_minimal(old_edge - add_zoom / 2,
+                                                       min_range=zoom_of_sep)
+                new_edge_after = Tools.fit_to_minimal(old_edge + add_zoom / 2,
+                                                      min_range=zoom_of_sep)
 
                 classify_edge_new.pop(arg_tag)
                 classify_edge_new.insert(arg_tag, new_edge_after)
@@ -311,9 +354,9 @@ class Tools(object):
 
         if value_map_new == node_data['value_map']:
             return False
-            
+
         else:
-            # sorted(classify_edge_new)  # 记得要排序一下！
+            sorted(classify_edge_new)  # 记得要排序一下！
             node_data['value_map'] = value_map_new.copy()
             node_data['classify_args'] = classify_edge_new.copy()
 
@@ -324,8 +367,6 @@ class Tools(object):
     @staticmethod
     def mutate_value_map_merge_same(node_data, *, merge_pb):
         """value_map 连续同值合并【优化】"""
-
-        # TODO test it.
 
         value_map_new = node_data['value_map'].copy()
         classify_edge_new = node_data['classify_args'].copy()
@@ -348,6 +389,10 @@ class Tools(object):
 
         pop_num = 0
         for i in merge_tag_list:
+
+            if len(classify_edge_new) <= 1:
+                break  # 如出现多个（如2个）切割edge，但对应的value（3个）相同时，有可能同时被pop，故限制
+
             if random.random() < merge_pb_each:
                 value_map_new.pop(i - pop_num)
                 classify_edge_new.pop(i - pop_num - 1)  # 相同赋值的后者的下标，对应于前一个下标的切割器
@@ -355,9 +400,9 @@ class Tools(object):
 
         if value_map_new == node_data['value_map']:
             return False
-            
+
         else:
-            # sorted(classify_edge_new)  # 记得要排序一下！
+            sorted(classify_edge_new)  # 记得要排序一下！
             node_data['value_map'] = value_map_new.copy()
             node_data['classify_args'] = classify_edge_new.copy()
 
@@ -373,7 +418,6 @@ class Tools(object):
         no_happen_pb = 1
 
         for pb in args:
-
             all_happen_pb = all_happen_pb * pb
             no_happen_pb = no_happen_pb * (1 - pb)
 
@@ -414,7 +458,7 @@ class Tools(object):
     def mutate_one_value_in_map(value, *, map_type='vector', jump_pb=0.1):
 
         bracket = []
-        
+
         if map_type == 'vector':
             bracket = [-1, 0, 1]  # value的值域
             if value == 0:
@@ -423,7 +467,7 @@ class Tools(object):
                 else:
                     new_value = 1
             else:
-                if random.random < jump_pb:
+                if random.random() < jump_pb:
                     if value < 0:
                         new_value = 1
                     else:
@@ -1881,12 +1925,18 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def fit_to_minimal(float_price, min_range=MIN_DISTANCE):
-        """To fit a price / price_delta to exchange's minimal price distance."""
+    def fit_to_minimal(float_number, min_range=MIN_DISTANCE, simplify=True):
+        """To fit a price / price_delta / anydata to (exchange's) minimal distance."""
 
-        return round(float_price * (1 / min_range)) / (1 / min_range)
+        result = round(float_number * (1 / min_range)) / (1 / min_range)
 
-    # -----------------------------------------------------------------------------------------------------------------
+        if simplify:
+            float_num = len(str(min_range).split('.')[1])
+            result = Tools.keep_float(result, float_num)
+
+        return result
+
+        # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
     def random_fee_rate(p=0.5):
