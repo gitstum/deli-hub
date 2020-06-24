@@ -125,6 +125,29 @@ class Tools(object):
         return pb_for_each
 
     # 基因树 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mutate_weight(node_data, *, change_pb=0.2, sep=0.02):
+        """LV.2 mutation: 权重进化函数
+
+        NOTE: inplace.
+        """
+
+        weight = node_data['weight']
+
+        if random.random() < change_pb:
+
+            new_weight = Tools.mutate_value(weight, sep=sep, mul=2)
+            while Tools.check_in_list(new_weight. [weight]):
+                new_weight = Tools.mutate_value(weight, sep=sep, mul=2)
+
+            node_data['weight'] = new_weight
+
+        else:
+            return False
+
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -146,32 +169,6 @@ class Tools(object):
 
         return updated
 
-    # -----------------------------------------------------------------------------------------------------------------
-
-    # @staticmethod
-    # def delete_multiple(check_list):
-    #     """
-    #     @param check_list: number list
-    #     @return: the
-    #     """
-
-    #     check_list.sort()
-
-    #     old_data = None
-    #     delete_tag_list = []
-
-    #     num = 0
-    #     for data in check_list:
-    #         if data == old_data:
-    #             delete_tag_list.append(num)
-
-    #         old_data = data
-    #         num += 1
-
-    #     if not delete_tag_list:
-    #         return check_list
-
-    #     delete_num = 0
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -321,13 +318,6 @@ class Tools(object):
 
         return node_updated
 
-        # if edge_list_new == edge_list:
-        #     return False
-
-        # else:
-        #     node_data['classify_args'] = edge_list_new.copy()
-        #     return True
-
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -350,17 +340,6 @@ class Tools(object):
 
         num = 0
         for edge in classify_edge:
-
-            # if old_edge is None:
-            #     old_edge = edge
-            #     num += 1
-            #     continue
-
-            # if edge - old_edge > long_edge:
-            #     long_tag_list.append(num)
-
-            # old_edge = edge 
-            # num += 1
 
             if old_edge is not None:
                 if edge - old_edge > long_edge:
@@ -405,20 +384,9 @@ class Tools(object):
         new_mutable_list = [True] * len(classify_edge_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new,
                                                   new_edge_list=classify_edge_new,
-                                                  new_mutable_list=new_mutable_list
-                                                  )
+                                                  new_mutable_list=new_mutable_list)
 
         return node_updated
-
-        # if classify_edge_new == classify_edge:
-        #     return False  # no change
-
-        # else:
-        #     classify_edge_new.sort()  # 记得要排序一下！
-        #     node_data['value_map_list'] = value_map_new.copy()
-        #     node_data['classify_args'] = classify_edge_new.copy()
-
-        #     return True
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -466,22 +434,12 @@ class Tools(object):
 
         return node_updated
 
-        # if classify_edge_new == classify_edge:
-        #     return False  # no change
-
-        # else:
-        #     classify_edge_new.sort()  # 记得要排序一下！
-        #     node_data['value_map_list'] = value_map_new.copy()
-        #     node_data['classify_args'] = classify_edge_new.copy()
-
-        #     return True
-
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
     def mutate_value_map(node_data, *, mut_pb=0.25, jump_pb=0.1, cut_pb=0.05, clear_pb=0.05, merge_pb=0.15,
                          smooth_pb=0.1):
-        """LV.3 MUTATION: 特征分类赋值变异
+        """LV.3 MUTATION: 特征分类赋值进化
 
         @param node_data: dict of the node in node_map, include:
             - 'value_map_list': the LIST to get mutated.
@@ -547,24 +505,6 @@ class Tools(object):
             if changed:
                 mutation_tag = True
                 print('value_map: value_changed')
-
-        # value_map = node_data['value_map_list']
-        # value_map_new = node_data['value_map_list'].copy()
-
-        # mut_pb_each = Tools.probability_each(object_num=len(value_map),
-        #                                      pb_for_all=mut_pb)  # 各元素发生变异的独立概率
-
-        # n = 0
-        # for value in value_map:
-        #     if random.random() < mut_pb_each:
-        #         new_value = Tools.mutate_one_value_in_map(value, map_type=map_type, jump_pb=jump_pb)
-        #         value_map_new[n] = new_value
-        #     n += 1
-
-        # if value_map_new != value_map:
-        #     node_data['value_map_list'] = value_map_new.copy()
-        #     mutation_tag = True
-        #     # print('value_changed.')
 
         return mutation_tag
 
@@ -659,16 +599,6 @@ class Tools(object):
 
         return node_updated
 
-        # if value_map_new == node_data['value_map_list']:
-        #     return False
-
-        # else:
-        #     classify_edge_new.sort()  # 记得要排序一下！
-        #     node_data['value_map_list'] = value_map_new.copy()
-        #     node_data['classify_args'] = classify_edge_new.copy()
-
-        #     return True
-
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -724,20 +654,9 @@ class Tools(object):
         new_mutable_list = [True] * len(classify_edge_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new,
                                                   new_edge_list=classify_edge_new,
-                                                  new_mutable_list=new_mutable_list
-                                                  )
+                                                  new_mutable_list=new_mutable_list)
 
         return node_updated
-
-        # if value_map_new == node_data['value_map_list']:
-        #     return False
-
-        # else:
-        #     classify_edge_new.sort()  # 记得要排序一下！
-        #     node_data['value_map_list'] = value_map_new.copy()
-        #     node_data['classify_args'] = classify_edge_new.copy()
-
-        #     return True
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -801,20 +720,9 @@ class Tools(object):
         new_mutable_list = [True] * len(classify_edge_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new,
                                                   new_edge_list=classify_edge_new,
-                                                  new_mutable_list=new_mutable_list
-                                                  )
+                                                  new_mutable_list=new_mutable_list)
 
         return node_updated
-
-        # if value_map_new == node_data['value_map_list']:
-        #     return False
-
-        # else:
-        #     classify_edge_new.sort()  # 记得要排序一下！
-        #     node_data['value_map_list'] = value_map_new.copy()
-        #     node_data['classify_args'] = classify_edge_new.copy()
-
-        #     return True
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -856,20 +764,9 @@ class Tools(object):
         new_mutable_list = [True] * len(classify_edge_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new,
                                                   new_edge_list=classify_edge_new,
-                                                  new_mutable_list=new_mutable_list
-                                                  )
+                                                  new_mutable_list=new_mutable_list)
 
         return node_updated
-
-        # if value_map_new == node_data['value_map_list']:
-        #     return False
-
-        # else:
-        #     classify_edge_new.sort()  # 记得要排序一下！
-        #     node_data['value_map_list'] = value_map_new.copy()
-        #     node_data['classify_args'] = classify_edge_new.copy()
-
-        #     return True
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -982,7 +879,7 @@ class Tools(object):
 
     @staticmethod
     def exchange_node(d1, d2, d1_node_name, d2_node_name):
-        """LV.1 结构交叉函数
+        """LV.1 结构交叉进化函数
 
         @param d1: node_map1，dict
         @param d2: node_map2, dict
