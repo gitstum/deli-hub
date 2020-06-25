@@ -104,6 +104,123 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def cal_event_pb(*args, deep=False):
+        """根据传入的独立概率事件计算发生概率
+
+        @param args: probability(ies) of happening(s)
+        @param deep: if deep=True, returns the probability of each 0~len(args) event happens
+        @return: probability dict
+        """
+
+        if len(args) == 0:
+            result = dict(all_happen_pb=1,  # 为了下面计算[]返回正确，这里将概率都设定为1
+                          any_happen_pb=1,
+                          no_happen_pb=1)
+            return result
+
+        all_happen_pb = 1
+        no_happen_pb = 1
+
+        for pb in args:
+            all_happen_pb = all_happen_pb * pb
+            no_happen_pb = no_happen_pb * (1 - pb)
+
+        any_happen_pb = 1 - no_happen_pb
+
+        result = dict(all_happen_pb=all_happen_pb,  # 全部发生的概率
+                      any_happen_pb=any_happen_pb,  # 至少一个发生的概率
+                      no_happen_pb=no_happen_pb  # 没有一个发生的概率
+                      )
+
+        if deep:
+            # 计算0～n个事件发生的概率
+            count_dict = {}
+            num = 0
+            while num <= len(args):  # NOTE '=' here.
+                
+                happen_list = []
+                chose_list, left_list = Tools.cut_list_into_combination(num, args)
+                
+                for chose, left in zip(chose_list, left_list):
+                    
+                    chose_happen = Tools.cal_event_pb(*chose)['all_happen_pb']
+                    left_not_happen = Tools.cal_event_pb(*left)['no_happen_pb']
+                    happen_list.append(chose_happen * left_not_happen)
+                    
+                count_dict['%s event happen' % num] = sum(happen_list)
+                num += 1
+
+            result.update(count_dict)
+
+        return result
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def cut_list_into_combination(combine_num, target_list):
+        """将列表的n个元素组合，返回组合结果、剩余结果
+
+        @param combine_num: how many value in target_list to get out
+        @return: [[out_list1, out_list2, ...], [left_list1, left_list2, ...]]
+
+        NOTE: test it to see: Tools.cut_list_into_combination(2, [0, 1, 2, 3, 4])
+        """
+
+        if combine_num <= 0:
+            return [[]], [target_list]
+
+        if combine_num > len(target_list):
+            combine_num = len(target_list)
+
+        # these lists consists of lists
+        left_list = []
+        chose_list = []
+        right_list = []
+
+        for i in list(range(len(target_list))):
+
+            if i + combine_num > len(target_list):
+                break  # 要为后续对right的取出，留下足够的元素
+
+            left = target_list[:i]
+            chose_value = target_list[i]
+            right = target_list[i + 1:]
+
+            left_list.append(left)
+            chose_list.append([chose_value])
+            right_list.append(right)
+
+        if combine_num == 1:
+
+            element_chose_list = chose_list
+            element_left_list = []
+
+            for left, right in zip(left_list, right_list):
+                element_left = left + right  # list
+                element_left_list.append(element_left)
+
+        else:
+
+            combine_num_next = combine_num - 1
+            element_chose_list = []
+            element_left_list = []
+
+            for left, chose, right in zip(left_list, chose_list, right_list):
+
+                element_chose_next, element_left_next = Tools.cut_list_into_combination(combine_num_next, right)
+
+                for chose_next, left_next in zip(element_chose_next, element_left_next):
+                    chose_combine = chose + chose_next
+                    left_combine = left + left_next
+
+                    element_chose_list.append(chose_combine)
+                    element_left_list.append(left_combine)
+
+        return element_chose_list, element_left_list
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def probability_each(*, object_num, pb_for_all, pb_type='any'):
         """已知一系列事件的总概率（任一发生、全都发生），返回系列中每一个事件发生的概率。
 
@@ -124,12 +241,60 @@ class Tools(object):
 
         return pb_for_each
 
-    # 基因树 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_weight(node_data, *, change_pb=0.2, sep=0.02):
+    def check_full_in_list(target, check_list, check_type='id'):
+        """check if all item in the list are 'True'."""
+
+        if not check_list:
+            return False  # in case of []
+
+        all_true = True
+
+        for i in check_list:
+
+            if check_type == 'id':
+                if i is not target:  # 'is' to exclude 1 ( 1 == True is True here)
+                    all_true = False
+                    break
+
+            if check_type == 'equal':
+                if i != target:
+                    all_true = False
+                    break
+
+        return all_true
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def check_any_in_list(target, check_list, check_type='id'):
+
+        if not check_list:
+            return False  # in case of []
+
+        any_true = False
+
+        for i in check_list:
+
+            if check_type == 'id':
+                if i is target:
+                    any_true = True
+                    break
+
+            if check_type == 'equal':
+                if i == target:
+                    any_true = True
+                    break
+
+        return any_true
+
+    # 基因树 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mutate_weight(node_data, *, reweight_pb, sep=0.02, **kwargs):
         """LV.2 mutation: 权重进化函数
 
         NOTE: inplace.
@@ -137,13 +302,15 @@ class Tools(object):
 
         weight = node_data['weight']
 
-        if random.random() < change_pb:
+        if random.random() < reweight_pb:
 
             new_weight = Tools.mutate_value(weight, sep=sep, mul=2)
-            while Tools.check_in_list(new_weight. [weight]):
+            while Tools.check_in_list(new_weight, [weight]):
                 new_weight = Tools.mutate_value(weight, sep=sep, mul=2)
 
             node_data['weight'] = new_weight
+            print('weight: changed.')
+            return True
 
         else:
             return False
@@ -151,24 +318,23 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def update_node_terminal(node_data, *, new_map_list=None, new_edge_list=None, new_mutable_list=None):
+    def update_node_terminal(node_data, *, new_mapping_list=None, new_edge_list=None, new_mutable_list=None):
         """更新节点字典数据"""
-        
+
         updated = False
 
-        if new_map_list and new_map_list != node_data['value_map_list']:
-            node_data['value_map_list'] = new_map_list.copy()
+        if new_mapping_list and new_mapping_list != node_data['map_value_list']:
+            node_data['map_value_list'] = new_mapping_list.copy()
             updated = True
 
-        if new_edge_list and new_edge_list != node_data['classify_args']:
+        if new_edge_list and new_edge_list != node_data['class_args']:
             new_edge_list.sort()  # 记得要排序一下！
-            node_data['classify_args'] = new_edge_list.copy()
+            node_data['class_args'] = new_edge_list.copy()
             if new_mutable_list:
-                node_data['classify_args_mutable'] = new_mutable_list.copy()  # 跟随'classify_args'， 一一对应
+                node_data['class_args_mutable'] = new_mutable_list.copy()  # 跟随'class_args'， 一一对应
             updated = True
 
         return updated
-
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -183,7 +349,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_edge(node_data, *, move_pb=0.25, pop_pb=0.15, insert_pb=0.1, add_zoom_mul=1.5):
+    def mutate_edge(node_data, *, move_pb, pop_pb, insert_pb, add_zoom_mul=1.5, **kwargs):
         """LV.4 MUTATION: 特征分类截取进化函数，对edge的值和数量进行优化
 
         @param node_data: 节点字典数据
@@ -196,18 +362,13 @@ class Tools(object):
 
         mutation_tag = False
 
-        mutable_list = node_data['classify_args_mutable']
-        mutable = False
-        for i in mutable_list:
-            if i:
-                mutable = True
-                break
-        if not mutable:
+        mutable_list = node_data['class_args_mutable']
+        node_mutable = Tools.check_any_in_list(True, mutable_list)  # 需至少存在一个可变异的edge
+        if not node_mutable:
             print('error: no edge args mutable. 6915')
-            return False  # 不存在可变异的切割edge（理论上不应该出现这种情况）
+            return False  # 不存在任何可变异的edge（理论上不应该出现这种情况）
 
-        edges_clean = Tools.check_all_true(mutable_list)
-        classify_addable = node_data['classify_args_addable']
+        edges_clean = Tools.check_full_in_list(True, mutable_list)
 
         if edges_clean:
 
@@ -216,41 +377,27 @@ class Tools(object):
                 poped = Tools.mutate_edge_pop(node_data, pop_pb=pop_pb)
                 if poped:
                     mutation_tag = True
-                    print('classify_edge: poped.')
+                    print('class_edge: poped.')
 
             # 2. edge 太远插入
-            if classify_addable and insert_pb:
+            edge_addable = node_data['class_edge_addable']
+            if edge_addable and insert_pb:
                 inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, add_zoom_mul=add_zoom_mul)
                 if inserted:
                     mutation_tag = True
-                    print('classify_edge: inserted.')
+                    print('class_edge: inserted.')
+
+        else:
+            print('class_args not clean(all edges), cannot modify mapping_list. error 1984')
 
         # 3. edge 切割点移动
         if move_pb:
             moved = Tools.mutate_edge_move(node_data, move_pb=move_pb)
             if moved:
                 mutation_tag = True
-                print('classify_edge: moved.')
+                print('class_edge: moved.')
 
         return mutation_tag
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def check_all_true(bool_list):
-        """check if all item in the list are 'True'."""
-
-        if not bool_list:
-            return False  # in case of []
-
-        all_true = True
-
-        for i in bool_list:
-            if i is not True:  # 'is' to exclude 1 ( 1 == True is True here)
-                all_true = False
-                break
-
-        return all_true
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -285,22 +432,26 @@ class Tools(object):
     def mutate_edge_move(node_data, *, move_pb):
         """切割边界变异：移动边界"""
 
-        # TODO: test it.
-
-        edge_list = node_data['classify_args']
-        edge_list_new = []  # 这里的写法与 mutate_value_map_* 中的不同，考虑到部分参数不是edge的情况，更严谨
-        mutable_list = node_data['classify_args_mutable']  # 需引用，但没有更新变化
+        edge_list = node_data['class_args']
+        edge_list_new = []  # 这里的写法与 mutate_mapping_list_* 中的不同，考虑到部分参数不是edge的情况，更严谨
+        mutable_list = node_data['class_args_mutable']  # 需引用，但没有更新变化
         not_mutable_tag = []
-        sep = node_data['classify_args_sep']
+        zoom_of_sep = node_data['class_edge_sep']
+
+        mutable_num = 0
+        for i in mutable_list:
+            if i is True:
+                mutable_num += 1
+        move_pb_each = Tools.probability_each(object_num=mutable_num, pb_for_all=move_pb)
 
         num = 0
         for edge, mutable in zip(edge_list, mutable_list):
 
-            if mutable:
-                if random.random() < move_pb:
-                    new_edge = Tools.mutate_value(edge, sep=sep)
+            if mutable is True:
+                if random.random() < move_pb_each:
+                    new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)
                     while Tools.check_in_list(new_edge, edge_list):
-                        new_edge = Tools.mutate_value(edge, sep=sep)  # 这里的循环操作使改变成为必然
+                        new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)  # 这里的循环操作使改变成为必然
                     edge_list_new.append(new_edge)
                 else:
                     edge_list_new.append(edge)
@@ -324,22 +475,21 @@ class Tools(object):
     def mutate_edge_insert(node_data, *, insert_pb, add_zoom_mul=1.5):
         """切割边界变异：太远了，插入"""
 
+        edge_list = node_data['class_args']
+        edge_list_new = node_data['class_args'].copy()
+        mapping_list = node_data['map_value_list']
+        mapping_list_new = node_data['map_value_list'].copy()
 
-        classify_edge = node_data['classify_args']
-        classify_edge_new = node_data['classify_args'].copy()
-        value_map = node_data['value_map_list']
-        value_map_new = node_data['value_map_list'].copy()
-
-        long_edge = node_data['classify_args_long_edge']
-        zoom_distance_edge = node_data['classify_args_short_edge'] * add_zoom_mul
-        sep = node_data['classify_args_sep']
+        long_edge = node_data['class_zoom_long']
+        zoom_distance_edge = node_data['class_zoom_short'] * add_zoom_mul
+        zoom_of_sep = node_data['class_edge_sep']
         map_type = node_data['map_type']
 
         long_tag_list = []
         old_edge = None
 
         num = 0
-        for edge in classify_edge:
+        for edge in edge_list:
 
             if old_edge is not None:
                 if edge - old_edge > long_edge:
@@ -357,8 +507,8 @@ class Tools(object):
         for i in long_tag_list:
             if random.random() < insert_pb_each:
 
-                edge_before = classify_edge_new[i + add_num - 1]
-                edge_after = classify_edge_new[i + add_num]
+                edge_before = edge_list_new[i + add_num - 1]
+                edge_after = edge_list_new[i + add_num]
 
                 zoom_line_before = edge_before + zoom_distance_edge  # 真实取值起点，与前方edge保持一定距离
                 zoom_line_after = edge_after - zoom_distance_edge
@@ -366,25 +516,25 @@ class Tools(object):
                 if zoom < zoom_distance_edge:
                     continue  # double check, to see if the zoom is big enough for a cut in.
 
-                point1 = Tools.fit_to_minimal(zoom_line_before + zoom * random.random(), min_range=sep)
-                point2 = Tools.fit_to_minimal(zoom_line_before + zoom * random.random(), min_range=sep)
+                point1 = Tools.fit_to_minimal(zoom_line_before + zoom * random.random(), min_range=zoom_of_sep)
+                point2 = Tools.fit_to_minimal(zoom_line_before + zoom * random.random(), min_range=zoom_of_sep)
 
                 if point1 != point2:
-                    classify_edge_new.insert(i + add_num, max(point1, point2))
-                    classify_edge_new.insert(i + add_num, min(point1, point2))
+                    edge_list_new.insert(i + add_num, max(point1, point2))
+                    edge_list_new.insert(i + add_num, min(point1, point2))
 
-                    cut_value = value_map[i + 1]
-                    value_map_new.insert(i + add_num + 1, cut_value)
-                    value_map_new.insert(i + add_num + 1,
-                                         Tools.mutate_one_value_in_map(cut_value, map_type=map_type))
+                    cut_value = mapping_list[i + 1]
+                    mapping_list_new.insert(i + add_num + 1, cut_value)
+                    mapping_list_new.insert(i + add_num + 1,
+                                            Tools.mutate_one_value_in_map(cut_value, map_type=map_type))
 
                     add_num += 2  # NOTE 2 here.
 
         # 更新node
-        new_mutable_list = [True] * len(classify_edge_new)  # 因为所有都为True，edges_clean，才能进入本函数
-        node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new,
-                                                  new_edge_list=classify_edge_new,
-                                                  new_mutable_list=new_mutable_list)
+        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
+        node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
+                                                  new_edge_list=edge_list_new,
+                                                  new_mutable_list=mutable_list_new)
 
         return node_updated
 
@@ -394,18 +544,18 @@ class Tools(object):
     def mutate_edge_pop(node_data, *, pop_pb):
         """切割边界变异：太近了，删除"""
 
-        classify_edge = node_data['classify_args']
-        classify_edge_new = node_data['classify_args'].copy()
-        value_map = node_data['value_map_list']
-        value_map_new = node_data['value_map_list'].copy()
+        edge_list = node_data['class_args']
+        edge_list_new = node_data['class_args'].copy()
+        mapping_list = node_data['map_value_list']
+        mapping_list_new = node_data['map_value_list'].copy()
 
-        short_edge = node_data['classify_args_short_edge']
+        short_edge = node_data['class_zoom_short']
 
         short_tag_list = []
         old_edge = None
 
         num = 0
-        for edge in classify_edge:
+        for edge in edge_list:
 
             if old_edge is not None:
                 if edge - old_edge < short_edge:
@@ -422,138 +572,138 @@ class Tools(object):
         pop_num = 0
         for i in short_tag_list:
             if random.random() < pop_pb_each:
-                classify_edge_new.pop(i - pop_num)
-                value_map_new.pop(i - pop_num)
+                edge_list_new.pop(i - pop_num)
+                mapping_list_new.pop(i - pop_num)
                 pop_num += 1
 
         # 更新node
-        new_mutable_list = [True] * len(classify_edge_new)  # 因为所有都为True，edges_clean，才能进入本函数
-        node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new,
-                                                  new_edge_list=classify_edge_new,
-                                                  new_mutable_list=new_mutable_list)
+        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
+        node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
+                                                  new_edge_list=edge_list_new,
+                                                  new_mutable_list=mutable_list_new)
 
         return node_updated
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value_map(node_data, *, mut_pb=0.25, jump_pb=0.1, cut_pb=0.05, clear_pb=0.05, merge_pb=0.15,
-                         smooth_pb=0.1):
+    def mutate_mapping_list(node_data, *, revalue_pb, jump_pb=0.2, cut_pb, clear_pb, merge_pb, smooth_pb, **kwargs):
         """LV.3 MUTATION: 特征分类赋值进化
 
         @param node_data: dict of the node in node_map, include:
-            - 'value_map_list': the LIST to get mutated.
+            - 'map_value_list': the LIST to get mutated.
             - 'map_type': to direct the mutation.
-            - 'classify_args': to be changed if any mutation happened on value_map.
-        @param mut_pb: probability of any  mutation happened.
+            - 'class_args': to be changed if any mutation happened on mapping_list.
+        @param revalue_pb: probability of any  mutation happened.
+        @param jump_pb:
         @param merge_pb: probability of merging 2(or more) same value into 1 value.
-        @param cut_pb: probability of cutting 1 value into 2. ('classify_args' cut at random distance)
+        @param cut_pb: probability of cutting 1 value into 2. ('class_args' cut at random distance)
         @param clear_pb: probability of deleting the value between 2 same value.
         @param smooth_pb: probability of adding a 0 value betweent -1 & 1 (for 'vector' map_type only)
-        @return: True for any mutation happened for value_map(and classify_args)
+        @return: True for any mutation happened for mapping_list(and classify_args)
 
-        NOTE: inplace. all pb are independent. Error if node_data['classify_args'] contains other than edges.
+        NOTE: inplace. all pb are independent. Error if node_data['class_args'] contains other than edges.
         """
 
         mutation_tag = False
-        classify_addable = node_data['classify_args_addable'] 
-        classify_edge = node_data['classify_args']  # 分类的切割点边界值 
+        edge_addable = node_data['class_edge_addable']
+        edge_list = node_data['class_args']  # 分类的切割点边界值 
         map_type = node_data['map_type']
 
-        edges_bool = node_data['classify_args_mutable']
-        edges_clean = Tools.check_all_true(edges_bool)
+        mutable_list = node_data['class_args_mutable']
+        edges_clean = Tools.check_full_in_list(True, mutable_list)
 
         # 注意，mutation的5项的顺序是有考虑的，且完成一个到下一个，不要随意改变先后次序或合并
 
         if edges_clean:
 
-            # 1. value_map 连续同值合并【优化】 --merge_pb
-            if merge_pb and len(classify_edge) > 1:
-                merged = Tools.mutate_value_map_merge_same(node_data, merge_pb=merge_pb)
+            # 1. mapping_list 连续同值合并【优化】 --merge_pb
+            if merge_pb and len(edge_list) > 1:
+                merged = Tools.mutate_mapping_list_merge_same(node_data, merge_pb=merge_pb)
                 if merged:
                     mutation_tag = True
-                    print('value_map: merged')
+                    print('mapping_list: merged')
 
-            # 2. value_map 跳值平滑【优化】  --smooth_pb
-            if classify_addable and map_type == 'vector' and smooth_pb:
-                smoothed = Tools.mutate_value_map_jump_smooth(node_data, smooth_pb=smooth_pb)
+            # 2. mapping_list 跳值平滑【优化】  --smooth_pb
+            if edge_addable and map_type == 'vector' and smooth_pb:
+                smoothed = Tools.mutate_mapping_list_jump_smooth(node_data, smooth_pb=smooth_pb)
                 if smoothed:
                     mutation_tag = True
-                    print('value_map: smoothed')
+                    print('mapping_list: smoothed')
 
-            # 3. value_map 同值间异类剔除【半优化】  --clear_pb
+            # 3. mapping_list 同值间异类剔除【半优化】  --clear_pb
             if clear_pb:
-                cleared = Tools.mutate_value_map_clear_between(node_data, clear_pb=clear_pb)
+                cleared = Tools.mutate_mapping_list_clear_between(node_data, clear_pb=clear_pb)
                 if cleared:
                     mutation_tag = True
-                    print('value_map: cleared')
+                    print('mapping_list: cleared')
 
-            # 4. value_map 数目增加 --cut_pb
-            if classify_addable and cut_pb:
-                cut = Tools.mutate_value_map_cut_within(node_data, cut_pb=cut_pb)
+            # 4. mapping_list 数目增加 --cut_pb
+            if edge_addable and cut_pb:
+                cut = Tools.mutate_mapping_list_cut_within(node_data, cut_pb=cut_pb)
                 if cut:
                     mutation_tag = True
                     print('cut')
 
         else:
-            print('edges not clean, cannot modify value_map. error 1984')
+            print('class_args not clean(all edges), cannot modify mapping_list. error 1984')
 
-        # 5. value_map 赋值变异 --mut_pb  (这一步才是这个函数正儿八经最应该做的事情）
+        # 5. mapping_list 赋值变异 --revalue_pb  (这一步才是这个函数正儿八经最应该做的事情）
 
-        if mut_pb:
-            changed = Tools.mutate_value_map_change_value(node_data, mut_pb=mut_pb, jump_pb=jump_pb)
+        if revalue_pb:
+            changed = Tools.mutate_mapping_list_change_value(node_data, revalue_pb=revalue_pb, jump_pb=jump_pb)
             if changed:
                 mutation_tag = True
-                print('value_map: value_changed')
+                print('mapping_list: value_changed')
 
         return mutation_tag
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value_map_change_value(node_data, *, mut_pb, jump_pb):
-        """value_map 赋值变异 """
+    def mutate_mapping_list_change_value(node_data, *, revalue_pb, jump_pb=0.2):
+        """mapping_list 赋值变异 """
 
-        value_map = node_data['value_map_list']
-        value_map_new = node_data['value_map_list'].copy()
+        mapping_list = node_data['map_value_list']
+        mapping_list_new = node_data['map_value_list'].copy()
         map_type = node_data['map_type']
 
-        mut_pb_each = Tools.probability_each(object_num=len(value_map),
-                                             pb_for_all=mut_pb)  # 各元素发生变异的独立概率
+        revalue_pb_each = Tools.probability_each(object_num=len(mapping_list),
+                                                 pb_for_all=revalue_pb)  # 各元素发生变异的独立概率
 
         n = 0
-        for value in value_map:
-            if random.random() < mut_pb_each:
+        for value in mapping_list:
+            if random.random() < revalue_pb_each:
                 new_value = Tools.mutate_one_value_in_map(value, map_type=map_type, jump_pb=jump_pb)
-                value_map_new[n] = new_value
+                mapping_list_new[n] = new_value
             n += 1
 
         # 更新node
-        node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new)
+        node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new)
 
         return node_updated
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value_map_cut_within(node_data, *, cut_pb, add_zoom_mul=1.5):
-        """value_map 数目增加：通过将某段赋值切开（但赋值仍相同）
+    def mutate_mapping_list_cut_within(node_data, *, cut_pb, add_zoom_mul=1.5):
+        """mapping_list 数目增加：通过将某段赋值切开（但赋值仍相同）
 
         注：这个功能在lv4 中有重复，且更科学（所以这里的概率设置低一些）
         """
 
-        classify_edge_new = node_data['classify_args'].copy()
-        if not classify_edge_new:
+        edge_list_new = node_data['class_args'].copy()
+        if not edge_list_new:
             return False  # 缺乏切割的参考edge值，会导致出错。
 
-        value_map_new = node_data['value_map_list'].copy()
-        zoom_of_sep = node_data['classify_args_sep']
-        zoom_short_edge = node_data['classify_args_short_edge']
+        mapping_list_new = node_data['map_value_list'].copy()
+        zoom_of_sep = node_data['class_edge_sep']
+        zoom_short_edge = node_data['class_zoom_short']
         zoom_at_border = zoom_short_edge * add_zoom_mul  # 如新增在两端，用此确定切割的edge值
         if zoom_short_edge < zoom_of_sep * 3:
             zoom_short_edge = zoom_of_sep * 3  # 切割两端都需要至少（可等于）保留一个sep，故3
 
-        cut_tag_list = list(range(len(value_map_new)))
+        cut_tag_list = list(range(len(mapping_list_new)))
 
         cut_pb_each = Tools.probability_each(object_num=len(cut_tag_list),
                                              pb_for_all=cut_pb)
@@ -563,16 +713,16 @@ class Tools(object):
             if random.random() < cut_pb_each:
 
                 if i == 0:
-                    new_edge = Tools.fit_to_minimal(classify_edge_new[0] - zoom_at_border,
+                    new_edge = Tools.fit_to_minimal(edge_list_new[0] - zoom_at_border,
                                                     min_range=zoom_of_sep)
 
                 elif i == (len(cut_tag_list) - 1):
-                    new_edge = Tools.fit_to_minimal(classify_edge_new[-1] + zoom_at_border,
+                    new_edge = Tools.fit_to_minimal(edge_list_new[-1] + zoom_at_border,
                                                     min_range=zoom_of_sep)
 
                 else:
-                    edge_before = classify_edge_new[i + add_num - 1]
-                    edge_after = classify_edge_new[i + add_num]
+                    edge_before = edge_list_new[i + add_num - 1]
+                    edge_after = edge_list_new[i + add_num]
                     cut_zoom = abs(edge_after - edge_before)
                     if cut_zoom < zoom_short_edge:
                         print('zoom too short, no cut within. issue: 1965')
@@ -584,17 +734,17 @@ class Tools(object):
                                                         min_range=zoom_of_sep)  # 升级版处理方式：保留sep的随机切割
 
                 if new_edge is not None:
-                    classify_edge_new.insert(i, new_edge)
-                    add_value = value_map_new[i + add_num]
-                    value_map_new.insert(i + add_num, add_value)  # 仅仅切割开，并不改变赋值
+                    edge_list_new.insert(i, new_edge)
+                    add_value = mapping_list_new[i + add_num]
+                    mapping_list_new.insert(i + add_num, add_value)  # 仅仅切割开，并不改变赋值
 
                     add_num += 1
 
         # 更新node
-        new_mutable_list = [True] * len(classify_edge_new)  # 因为所有都为True，edges_clean，才能进入本函数
-        node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new,
-                                                  new_edge_list=classify_edge_new,
-                                                  new_mutable_list=new_mutable_list
+        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
+        node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
+                                                  new_edge_list=edge_list_new,
+                                                  new_mutable_list=mutable_list_new
                                                   )
 
         return node_updated
@@ -602,22 +752,22 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value_map_clear_between(node_data, *, clear_pb):
-        """value_map 同值间异类剔除【半优化】
+    def mutate_mapping_list_clear_between(node_data, *, clear_pb):
+        """mapping_list 同值间异类剔除【半优化】
 
         注：这个功能在lv4 中有重复，且更科学（所以这里的概率设置低一些）
         """
 
-        value_map_new = node_data['value_map_list'].copy()
-        classify_edge_new = node_data['classify_args'].copy()
-        zoom_of_sep = node_data['classify_args_sep']
+        mapping_list_new = node_data['map_value_list'].copy()
+        edge_list_new = node_data['class_args'].copy()
+        zoom_of_sep = node_data['class_edge_sep']
 
         clear_order_list = []
-        last_value_1 = None  # last value in value_map
+        last_value_1 = None  # last value in mapping_list
         last_value_2 = None  # last value of the last value
 
         num = -1  # NOTE, different here.
-        for value in value_map_new:
+        for value in mapping_list_new:
 
             if last_value_2 == value:  # 前前一个等于当前 --既包括中间异类，也包括中间同类
                 clear_order_list.append(num)
@@ -635,53 +785,53 @@ class Tools(object):
         for i in clear_order_list:
             if random.random() < clear_pb_each:
 
-                old_edge_before = classify_edge_new[i - pop_num - 1]
-                old_edge_after = classify_edge_new[i - pop_num]
+                old_edge_before = edge_list_new[i - pop_num - 1]
+                old_edge_after = edge_list_new[i - pop_num]
                 cut_zoom = old_edge_after - old_edge_before
                 new_edge_value = Tools.fit_to_minimal(old_edge_before + cut_zoom * random.random(),
                                                       min_range=zoom_of_sep)  # 处理方式：随机切割
 
                 # 如在fit_to_minimal之后和两端相等，那就没法切割出有意义的赋值区间了
                 if old_edge_before < new_edge_value < old_edge_after:
-                    classify_edge_new.pop(i - pop_num)
-                    classify_edge_new.pop(i - pop_num - 1)
-                    classify_edge_new.insert(i - pop_num - 1, new_edge_value)
+                    edge_list_new.pop(i - pop_num)
+                    edge_list_new.pop(i - pop_num - 1)
+                    edge_list_new.insert(i - pop_num - 1, new_edge_value)
 
-                    value_map_new.pop(i - pop_num)  # 清除中间值，两头值并没有合并
+                    mapping_list_new.pop(i - pop_num)  # 清除中间值，两头值并没有合并
                     pop_num += 1
 
         # 更新node
-        new_mutable_list = [True] * len(classify_edge_new)  # 因为所有都为True，edges_clean，才能进入本函数
-        node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new,
-                                                  new_edge_list=classify_edge_new,
-                                                  new_mutable_list=new_mutable_list)
+        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
+        node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
+                                                  new_edge_list=edge_list_new,
+                                                  new_mutable_list=mutable_list_new)
 
         return node_updated
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value_map_jump_smooth(node_data, *, smooth_pb, smooth_zoom_mul=1.5):
-        """value_map 跳值平滑（插入）【优化】
+    def mutate_mapping_list_jump_smooth(node_data, *, smooth_pb, smooth_zoom_mul=1.5):
+        """mapping_list 跳值平滑（插入）【优化】
 
         @param node_data:
         @param smooth_pb:
         @param smooth_zoom_mul: lv4 mutation 中抹掉分类的临界值的倍数
         """
 
-        value_map_new = node_data['value_map_list'].copy()
-        classify_edge_new = node_data['classify_args'].copy()
+        mapping_list_new = node_data['map_value_list'].copy()
+        edge_list_new = node_data['class_args'].copy()
 
         # 这里的做法是，预先设定zoom值（固定），插入。后期可考虑动态调整zoom值(要考虑前后边界的情况：缺失、太窄等)
-        add_zoom = node_data['classify_args_short_edge'] * smooth_zoom_mul
-        zoom_of_sep = node_data['classify_args_sep']
+        add_zoom = node_data['class_zoom_short'] * smooth_zoom_mul
+        zoom_of_sep = node_data['class_edge_sep']
 
         add_tag_list = []
-        last_value_1 = None  # last value in value_map
+        last_value_1 = None  # last value in mapping_list
 
         num = 0
 
-        for value in value_map_new:
+        for value in mapping_list_new:
 
             if last_value_1 is None:
                 last_value_1 = value
@@ -703,41 +853,41 @@ class Tools(object):
         add_num = 0
         for i in add_tag_list:
             if random.random() < smooth_pb_each:
-                value_map_new.insert(i + add_num, 0)  # 插入0到符号变化之间，以平滑
+                mapping_list_new.insert(i + add_num, 0)  # 插入0到符号变化之间，以平滑
 
                 arg_tag = i + add_num - 1
-                old_edge = classify_edge_new[i - 1]
+                old_edge = edge_list_new[i - 1]
                 new_edge_before = Tools.fit_to_minimal(old_edge - add_zoom / 2,
                                                        min_range=zoom_of_sep)
                 new_edge_after = Tools.fit_to_minimal(old_edge + add_zoom / 2,
                                                       min_range=zoom_of_sep)
 
-                classify_edge_new.pop(arg_tag)
-                classify_edge_new.insert(arg_tag, new_edge_after)
-                classify_edge_new.insert(arg_tag, new_edge_before)
+                edge_list_new.pop(arg_tag)
+                edge_list_new.insert(arg_tag, new_edge_after)
+                edge_list_new.insert(arg_tag, new_edge_before)
 
         # 更新node
-        new_mutable_list = [True] * len(classify_edge_new)  # 因为所有都为True，edges_clean，才能进入本函数
-        node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new,
-                                                  new_edge_list=classify_edge_new,
-                                                  new_mutable_list=new_mutable_list)
+        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
+        node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
+                                                  new_edge_list=edge_list_new,
+                                                  new_mutable_list=mutable_list_new)
 
         return node_updated
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value_map_merge_same(node_data, *, merge_pb):
-        """value_map 连续同值合并【优化】"""
+    def mutate_mapping_list_merge_same(node_data, *, merge_pb):
+        """mapping_list 连续同值合并【优化】"""
 
-        value_map_new = node_data['value_map_list'].copy()
-        classify_edge_new = node_data['classify_args'].copy()
+        mapping_list_new = node_data['map_value_list'].copy()
+        edge_list_new = node_data['class_args'].copy()
 
         merge_tag_list = []
-        last_value_1 = None  # last value in value_map
+        last_value_1 = None  # last value in mapping_list
 
         num = 0
-        for value in value_map_new:
+        for value in mapping_list_new:
             if value == last_value_1:
                 merge_tag_list.append(num)  # 记录相同赋值的后者的下标
             last_value_1 = value
@@ -752,42 +902,21 @@ class Tools(object):
         pop_num = 0
         for i in merge_tag_list:
 
-            if len(classify_edge_new) <= 1:
+            if len(edge_list_new) <= 1:
                 break  # 如出现多个（如2个）切割edge，但对应的value（3个）相同时，有可能同时被pop，故限制
 
             if random.random() < merge_pb_each:
-                value_map_new.pop(i - pop_num)
-                classify_edge_new.pop(i - pop_num - 1)  # 相同赋值的后者的下标，对应于前一个下标的切割器
+                mapping_list_new.pop(i - pop_num)
+                edge_list_new.pop(i - pop_num - 1)  # 相同赋值的后者的下标，对应于前一个下标的切割器
                 pop_num += 1
 
         # 更新node
-        new_mutable_list = [True] * len(classify_edge_new)  # 因为所有都为True，edges_clean，才能进入本函数
-        node_updated = Tools.update_node_terminal(node_data, new_map_list=value_map_new,
-                                                  new_edge_list=classify_edge_new,
-                                                  new_mutable_list=new_mutable_list)
+        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
+        node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
+                                                  new_edge_list=edge_list_new,
+                                                  new_mutable_list=mutable_list_new)
 
         return node_updated
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def cal_event_pb(*args):
-        """根据传入的独立概率事件，返回: 全部发生的概率，至少一个发生的概率，没有一个发生的概率"""
-
-        all_happen_pb = 1
-        no_happen_pb = 1
-
-        for pb in args:
-            all_happen_pb = all_happen_pb * pb
-            no_happen_pb = no_happen_pb * (1 - pb)
-
-        any_happen_pb = 1 - no_happen_pb
-
-        result = dict(all_happen_pb=all_happen_pb,
-                      any_happen_pb=any_happen_pb,
-                      no_happen_pb=no_happen_pb)
-
-        return result
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -795,6 +924,7 @@ class Tools(object):
     def mutate_one_value_in_map(value, *, map_type='vector', jump_pb=0.1):
 
         bracket = []
+        new_value = value
 
         if map_type == 'vector':
             bracket = [-1, 0, 1]  # value的值域
@@ -804,7 +934,7 @@ class Tools(object):
                 else:
                     new_value = 1
             else:
-                if random.random() < jump_pb:
+                if random.random() < jump_pb:  # jump_pb本身就是each的
                     if value < 0:
                         new_value = 1
                     else:
@@ -2048,7 +2178,7 @@ class Tools(object):
         if not order_price:
 
             slippage = Tools.get_slippage(price_start, price_min, ticks, how='bad')
-            if slippage < MIN_DISTANCE and np.random.random() < 0.5:
+            if slippage < MIN_DISTANCE and random.random() < 0.5:
                 slippage += MIN_DISTANCE  # for price_start can be bid_price_1 or ask_price_1, not sure.
 
             trade_price = price_start - slippage
@@ -2080,7 +2210,7 @@ class Tools(object):
                     p = 0.4  # short order against the trend
                 else:
                     p = 0.2
-                if np.random.random() < p:
+                if random.random() < p:
                     lowest_possible_trade_price += slippage
 
             # %path 22  --higher than price_start, a chance to be MAKER.
@@ -2110,7 +2240,7 @@ class Tools(object):
                 else:
                     up_pin_percentage = (price_max - price_start) / bar_range
                     # in this situation, real up part is (price_max-lowest_possible_trade_price), but a bit too radical
-                    if np.random.random() < up_pin_percentage:
+                    if random.random() < up_pin_percentage:
                         return price_start, fee_rate  # if many trades happens upper, then still a big chance get traded
                     else:
                         return np.nan, np.nan
@@ -2141,7 +2271,7 @@ class Tools(object):
         if not order_price:
 
             slippage = Tools.get_slippage(price_max, price_start, ticks, how='bad')
-            if slippage < MIN_DISTANCE and np.random.random() < 0.5:
+            if slippage < MIN_DISTANCE and random.random() < 0.5:
                 slippage += MIN_DISTANCE
 
             trade_price = price_start + slippage
@@ -2171,7 +2301,7 @@ class Tools(object):
                     p = 0.4
                 else:
                     p = 0.2
-                if np.random.random() < p:
+                if random.random() < p:
                     highest_possible_trade_price -= slippage
 
             # %path 4  --lower than price_start, a chance to be MAKER
@@ -2197,7 +2327,7 @@ class Tools(object):
                     return market_price, fee_rate
                 else:
                     down_pin_percentage = (price_start - price_min) / bar_range
-                    if np.random.random() < down_pin_percentage:
+                    if random.random() < down_pin_percentage:
                         return price_start, fee_rate
                     else:
                         return np.nan, np.nan
@@ -2246,7 +2376,7 @@ class Tools(object):
                 if ticks < slippage_tick_max:
                     slippage = 0
                 else:
-                    slippage = Tools.fit_to_minimal(np.random.random() * np.random.random() * slip_range)
+                    slippage = Tools.fit_to_minimal(random.random() * random.random() * slip_range)
 
         else:
 
@@ -2268,7 +2398,7 @@ class Tools(object):
         @param p: probability of being a market MAKER
         @return: fee rate value
         """
-        if np.random.random() < p:
+        if random.random() < p:
             fee_rate = OrderFee.MAKER.value
         else:
             fee_rate = OrderFee.TAKER.value
