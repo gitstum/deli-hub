@@ -90,14 +90,21 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def fit_to_minimal(float_number, min_range=MIN_DISTANCE, simplify=True):
+    def fit_to_minimal(value, min_range=MIN_DISTANCE, modify=True):
         """To fit a price / price_delta / anydata to the (exchange's) minimal distance."""
 
-        result = round(float_number * (1 / min_range)) / (1 / min_range)
+        result = round(value * (1 / min_range)) / (1 / min_range)
 
-        if simplify:
-            float_num = len(str(min_range).split('.')[1])
-            result = Tools.keep_float(result, float_num)
+        if modify:
+            
+            if type(min_range) == type(0.1):
+                # 避免小数点后太长
+                float_num = len(str(min_range).split('.')[1])
+                result = Tools.keep_float(result, float_num)  
+
+            else:
+                # 整数进，整数出
+                result = round(result)
 
         return result
 
@@ -291,6 +298,70 @@ class Tools(object):
         return any_true
 
     # 基因树 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mutate_feature(node_data, *, kw_pb=0.1, refeature_pb=0.1, mul=1.5, positive_kw=True, **kwargs):
+        """LV.5 特征参数进化"""
+        
+        # 1. mutate kwargs of the classifier function which is not feature data.
+        
+        key_list = []
+        sep_list = []
+        
+        for key, value in node_data['class_kw_sep'].items():
+            
+            if value is None:
+                continue
+                
+            key_list.append(key)
+            sep_list.append(value)
+            
+        kw_pb_each = Tools.probability_each(object_num=len(key_list), pb_for_all=kw_pb)
+            
+        for key, sep in zip(key_list, sep_list):
+            
+            if random.random() < kw_pb_each:
+
+                old_value = node_data['class_kw'][key]
+            
+                if sep is True:
+                    if old_value > 20:
+                        sep = None  # 按 5% 自动计算步长
+                    else:
+                        sep = 1
+                
+                new_value = Tools.mutate_value(old_value, sep=sep, mul=mul)
+                if positive_kw and new_value <= 0:
+                        new_value = 10  # 直接设定10，跳出不利的循环
+                
+                if new_value != old_value:
+                    node_data['class_kw'][key] = new_value
+                    print('class_kw: "%s" value mutated.' % key)
+            
+        # 2. mutate feature
+        
+        key_list = []
+        name_list = []
+        
+        for key, value in node_data['class_kw_name'].items():
+            
+            if value:
+                key_list.append(key)
+                name_list.append(value)
+                
+        refeature_pb_each = Tools.probability_each(object_num=len(key_list), pb_for_all=refeature_pb)
+        
+        for key, name in zip(key_list, name_list):
+            
+            if random.random() < refeature_pb_each:
+                
+                pass  # TODO: 名字、feature值 的进化
+            
+                # print('class refeatured.')
+            
+
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -303,12 +374,7 @@ class Tools(object):
         weight = node_data['weight']
 
         if random.random() < reweight_pb:
-
-            new_weight = Tools.mutate_value(weight, sep=sep, mul=2)
-            while Tools.check_in_list(new_weight, [weight]):
-                new_weight = Tools.mutate_value(weight, sep=sep, mul=2)
-
-            node_data['weight'] = new_weight
+            node_data['weight'] = Tools.mutate_value(weight, sep=sep, mul=2)
             print('weight: changed.')
             return True
 
@@ -403,7 +469,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value(value, *, sep, mul=3, scale=None, distribute='normal'):
+    def mutate_value(value, *, sep=None, mul=3, scale=None, distribute='normal'):
         """ 对指定数值，根据相关参数进行变异。
 
         @param value: 待变异的数值
@@ -412,18 +478,43 @@ class Tools(object):
         @param scale:　极端区域的变异幅度(>=0)
         @param distribute:
         @return: mutated value
+
         """
 
         if not distribute == 'normal':
             print('error 4765')
             return value  # 暂不支持其他类别变异
 
+        if sep is None:
+            sep = value / 20  
+            # 20：主观设定，按 5% 自动计算步长。
+            # 整数value的自动步长，要求value不能低于11，否则将sep将为0，无法逆转
+            # 最大的缺点在于，对于数值大的value，sep也大，因此很难长期保持 --整体使得value的变异有变小的倾向
+            if type(value) == type(1):
+                sep = round(sep)
+            else:
+                float_num = len(str(value).split('.')[1]) + 1
+                sep = Tools.keep_float(sep, float_num)
+
+        if sep == 0:
+            return value
+
         if scale is None:
             scale = 1 / mul * 1.5  # 主观看着合适。。
 
-        end_flut_mul = np.random.normal(loc=1.0, scale=scale)
+        end_flut_mul = np.random.normal(loc=1.0, scale=scale)  # 末端变异增强参数
         delta = np.random.randn() * sep * mul * end_flut_mul
         new_value = Tools.fit_to_minimal(value + delta, min_range=sep)
+
+        # 如value未变化，循环操作促使改变
+        num = 0
+        while new_value == value:
+            delta = np.random.randn() * sep * mul * end_flut_mul
+            new_value = Tools.fit_to_minimal(value + delta, min_range=sep)
+            num += 1
+            if num > 30:
+                print('over 30.')
+                break  # 避免过度，浪费计算资源
 
         return new_value
 
@@ -452,7 +543,7 @@ class Tools(object):
                 if random.random() < move_pb_each:
                     new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)
                     while Tools.check_in_list(new_edge, edge_list):
-                        new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)  # 这里的循环操作使改变成为必然
+                        new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)  # 避免与已有的其他edge重合
                     edge_list_new.append(new_edge)
                 else:
                     edge_list_new.append(edge)
