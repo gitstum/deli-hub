@@ -388,7 +388,8 @@ class Tools(object):
                     print('class_edge: inserted.')
 
         else:
-            print('class_args not clean(all edges), cannot modify mapping_list. error 1984')
+            # print('class_args not clean(all edges), cannot modify mapping_list. error 1984')
+            pass
 
         # 3. edge 切割点移动
         if move_pb:
@@ -523,10 +524,11 @@ class Tools(object):
                     edge_list_new.insert(i + add_num, max(point1, point2))
                     edge_list_new.insert(i + add_num, min(point1, point2))
 
-                    cut_value = mapping_list[i + 1]
-                    mapping_list_new.insert(i + add_num + 1, cut_value)
-                    mapping_list_new.insert(i + add_num + 1,
+                    cut_value = mapping_list[i]
+                    mapping_list_new.insert(i + add_num,
                                             Tools.mutate_one_value_in_map(cut_value, map_type=map_type))
+                    mapping_list_new.insert(i + add_num, cut_value)  # cut_value中间夹着一个变异后的value
+
 
                     add_num += 2  # NOTE 2 here.
 
@@ -643,10 +645,11 @@ class Tools(object):
                 cut = Tools.mutate_mapping_list_cut_within(node_data, cut_pb=cut_pb)
                 if cut:
                     mutation_tag = True
-                    print('cut')
+                    print('mapping_list: cut')
 
         else:
-            print('class_args not clean(all edges), cannot modify mapping_list. error 1984')
+            # print('class_args not clean(all edges), cannot modify mapping_list. error 1984')
+            pass
 
         # 5. mapping_list 赋值变异 --revalue_pb  (这一步才是这个函数正儿八经最应该做的事情）
 
