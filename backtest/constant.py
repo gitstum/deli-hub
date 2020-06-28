@@ -118,9 +118,7 @@ class Method(Enum):
                    ]
 
     # 排列求解：按序依次判断（/比较）
-    PERMUTATION = ['perm_cond',  # 在满足a方向（正负，对比0）的条件下，使用同方向（正负）的b的pos_should，其余0 【限2列】
-                   'perm_cond2',  # 在满足a条件（0/1）的情况下，使用b的pos_should，其余0  【限2列】
-                   'perm_add',  # 一直涨，sig值越来越大:1，否则0
+    PERMUTATION = ['perm_add',  # 一直涨，sig值越来越大:1，否则0
                    'perm_sub',  # 一直跌，sig值越来越小:1， 否则0
                    'perm_up',  # sig值震荡（含持平）上涨：1，否则0
                    'perm_down'  # sig值震荡（含持平）下跌：1，否则0
