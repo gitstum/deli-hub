@@ -52,38 +52,38 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def str_time(f=6):
+    def str_time(keep_float=6):
         """获取str时间信息
 
-        @param f: 秒后要保留的小数位
+        @param keep_float: 秒后要保留的小数位
         @return: str时间
         """
 
-        if f == 0: f = -1
-        f -= 6
-        if f > 0: f = 0
+        if keep_float == 0: keep_float = -1
+        keep_float -= 6
+        if keep_float > 0: keep_float = 0
 
-        if f == 0:
+        if keep_float == 0:
             now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))
         else:
-            now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))[:f]
+            now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))[:keep_float]
 
         return now
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def keep_float(number, float_num):
+    def shorten_float(number, keep_float):
         """float简化：保留小数点后x位
 
         @param number: 要化简的数
-        @param float_num: 要保留的小数位
+        @param keep_float: 要保留的小数位
         @return: 化简后的数
         """
 
-        number = number * 10 ** float_num
+        number = number * 10 ** keep_float
         number = int(number)
-        number = number / 10 ** float_num
+        number = number / 10 ** keep_float
 
         return number
 
@@ -100,7 +100,7 @@ class Tools(object):
             if type(min_range) == type(0.1):
                 # 避免小数点后太长
                 float_num = len(str(min_range).split('.')[1])
-                result = Tools.keep_float(result, float_num)  
+                result = Tools.shorten_float(result, float_num)  
 
             else:
                 # 整数进，整数出
@@ -300,10 +300,106 @@ class Tools(object):
     # 基因树 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     
     # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def recal_model(df, node_map, root_function):
+        """从 node_map 空壳获取模型的 pos_should"""
+
+        # TODO: debug
+
+        def build_leaf(node):
+
+            # LV.6 计算feature
+            feature_func_list = [] 
+            for func in node['class_kw_func']:
+                if type(func) == type(Tools.agg_cal):
+                    feature_func_list.append(func)
+
+            feature_dict = {}
+            num = 1
+            for func, args in zip(node['feature_args'], feature_func_list):
+                args = [df] + args  # 在模型提取时，原始数据(DataFrame)被剔除了
+                feature = func(*args)  # feature计算参数全部为位置参数！
+                feature_name = 'feature_' + str(num)
+                feature_dict.update({feature_name: feature})
+                num += 1
+
+            # LV.5 计算分类
+            class_kw_args = feature_dict.update(node['class_kw_args'])  # 在模型提取时，feature数据(Series)被剔除了
+            class_args = node['class_args']
+            class_func = node['class_func']
+            class_data = class_func(*class_args, **class_kw_args)  # 在模型提取时，分类数据(Series)被剔除了
+
+            # LV.4 计算赋值
+            map_value_list = node['map_value_list']
+            mapped_data = Tools.get_mapped_data(class_data, map_value_list)
+
+            # LV.3 --无
+
+            # LV.2 赋予权重，获得节点数据
+            node_data = mapped_data * node['weight']  # 在模型提取时，节点数据(Series)被从这里剔除了
+
+            return node_data
+
+        def build_branch(name, node):
+
+            # 获取下一个级别的数据
+            child_names = []
+            slice_end = len(name)
+            for k in node_map.keys():  # 这里用到了外围的node_map
+                if k[:slice_end] == name and len(k) == slice_end + 1:
+                    child_names.append(k)
+
+            args = []
+            for child in child_names:
+                args.append(node_map[child]['node_data'])
+
+            # 计算节点数据
+            node_function = node['node_function']
+            node_data = node_function(*args) * node['weight']
+
+            return node_data
+
+        # step1: 获取树叶 --解决terminal
+        node_map_old = node_map.copy()  # avoid RuntimeError
+        for name, node in node_map_old.items():
+            if node['terminal']:
+                node_map[name]['node_data'] = build_leaf(node)
+
+        # step2: 补充树枝
+        node_map_old = node_map.copy()
+        for name, node in node_map_old.items():
+            if not node['terminal']:
+                node_map[name]['node_data'] = build_branch(name, node)
+
+        # step3: 获取模型的 pos_should
+        deputy_list = []
+        for name in node_map.keys():
+            if len(name) == 1:
+                deputy_list.append(name)
+        deputy_list.sort()  # 就是为了这个sort，分开两部写
+        
+        root_args = []
+        for name in deputy_list:
+            root_args.append(node_map[name]['node_data'])
+
+        pos_should = root_function(*root_args)
+
+        return pos_should
+    
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def get_mapped_data(class_data, map_value_list):
+
+        mapped_data = pd.Sereis()
+        pass
+
+        return mapped_data  # not inplace. node_mao中并不保持分类映射后的数据，降低内存压力
+
+    # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
     def mutate_feature(node_data, *, kw_pb=0.1, refeature_pb=0.1, mul=1.5, positive_kw=True, **kwargs):
-        """LV.5 特征参数进化"""
+        """LV.6 特征参数进化"""
         
         # 1. mutate kwargs of the classifier function which is not feature data.
         
@@ -343,17 +439,17 @@ class Tools(object):
         # 2. mutate feature
         
         key_list = []
-        name_list = []
+        func_list = []
         
         for key, value in node_data['class_kw_name'].items():
             
             if value:
                 key_list.append(key)
-                name_list.append(value)
+                func_list.append(value) 
                 
         refeature_pb_each = Tools.probability_each(object_num=len(key_list), pb_for_all=refeature_pb)
         
-        for key, name in zip(key_list, name_list):
+        for key, name in zip(key_list, func_list):
             
             if random.random() < refeature_pb_each:
                 
@@ -370,6 +466,10 @@ class Tools(object):
 
         NOTE: inplace.
         """
+
+        node_type = node_data['node_type']
+        if node_type == ('cond' or 'condition'):
+            return False  # condition类不计算权重
 
         weight = node_data['weight']
 
@@ -416,7 +516,7 @@ class Tools(object):
 
     @staticmethod
     def mutate_edge(node_data, *, move_pb, pop_pb, insert_pb, add_zoom_mul=1.5, **kwargs):
-        """LV.4 MUTATION: 特征分类截取进化函数，对edge的值和数量进行优化
+        """LV.5 MUTATION: 特征分类截取进化函数，对edge的值和数量进行优化
 
         @param node_data: 节点字典数据
         @param move_pb: 有至少一个edge发生移动的概率
@@ -446,8 +546,7 @@ class Tools(object):
                     print('class_edge: poped.')
 
             # 2. edge 太远插入
-            edge_addable = node_data['class_edge_addable']
-            if edge_addable and insert_pb:
+            if insert_pb:
                 inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, add_zoom_mul=add_zoom_mul)
                 if inserted:
                     mutation_tag = True
@@ -494,7 +593,7 @@ class Tools(object):
                 sep = round(sep)
             else:
                 float_num = len(str(value).split('.')[1]) + 1
-                sep = Tools.keep_float(sep, float_num)
+                sep = Tools.shorten_float(sep, float_num)
 
         if sep == 0:
             return value
@@ -681,7 +780,7 @@ class Tools(object):
 
     @staticmethod
     def mutate_mapping_list(node_data, *, revalue_pb, jump_pb=0.2, cut_pb, clear_pb, merge_pb, smooth_pb, **kwargs):
-        """LV.3 MUTATION: 特征分类赋值进化
+        """LV.4 MUTATION: 特征分类赋值进化
 
         @param node_data: dict of the node in node_map, include:
             - 'map_value_list': the LIST to get mutated.
@@ -698,10 +797,9 @@ class Tools(object):
         NOTE: inplace. all pb are independent. Error if node_data['class_args'] contains other than edges.
         """
 
-        mutation_tag = False
-        edge_addable = node_data['class_edge_addable']
+        mutation_tag = False 
         edge_list = node_data['class_args']  # 分类的切割点边界值 
-        map_type = node_data['map_type']
+        map_type = node_data['map_type'] 
 
         mutable_list = node_data['class_args_mutable']
         edges_clean = Tools.check_full_in_list(True, mutable_list)
@@ -718,7 +816,7 @@ class Tools(object):
                     print('mapping_list: merged')
 
             # 2. mapping_list 跳值平滑【优化】  --smooth_pb
-            if edge_addable and map_type == 'vector' and smooth_pb:
+            if map_type == 'vector' and smooth_pb:
                 smoothed = Tools.mutate_mapping_list_jump_smooth(node_data, smooth_pb=smooth_pb)
                 if smoothed:
                     mutation_tag = True
@@ -732,7 +830,7 @@ class Tools(object):
                     print('mapping_list: cleared')
 
             # 4. mapping_list 数目增加 --cut_pb
-            if edge_addable and cut_pb:
+            if cut_pb:
                 cut = Tools.mutate_mapping_list_cut_within(node_data, cut_pb=cut_pb)
                 if cut:
                     mutation_tag = True
@@ -783,7 +881,7 @@ class Tools(object):
     def mutate_mapping_list_cut_within(node_data, *, cut_pb, add_zoom_mul=1.5):
         """mapping_list 数目增加：通过将某段赋值切开（但赋值仍相同）
 
-        注：这个功能在lv4 中有重复，且更科学（所以这里的概率设置低一些）
+        注：这个功能在LV.5 中有重复，且更科学（所以这里的概率设置低一些）
         """
 
         edge_list_new = node_data['class_args'].copy()
@@ -849,7 +947,7 @@ class Tools(object):
     def mutate_mapping_list_clear_between(node_data, *, clear_pb):
         """mapping_list 同值间异类剔除【半优化】
 
-        注：这个功能在lv4 中有重复，且更科学（所以这里的概率设置低一些）
+        注：这个功能在LV.5 中有重复，且更科学（所以这里的概率设置低一些）
         """
 
         mapping_list_new = node_data['map_value_list'].copy()
@@ -910,7 +1008,7 @@ class Tools(object):
 
         @param node_data:
         @param smooth_pb:
-        @param smooth_zoom_mul: lv4 mutation 中抹掉分类的临界值的倍数
+        @param smooth_zoom_mul: LV.5 mutation 中抹掉分类的临界值的倍数
         """
 
         mapping_list_new = node_data['map_value_list'].copy()
@@ -1052,10 +1150,15 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def get_node_id():
-        """获取节点的唯一ID"""
+    def get_id(id_type='node'):
+        """获取唯一ID：节点，分类器"""
 
-        return 'node_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
+        if id_type == 'node':
+            new_ID = 'node_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
+        elif id_type == 'classifier':
+            new_ID = 'class_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
+
+        return 
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1171,6 +1274,7 @@ class Tools(object):
 
         @param sub_edge: the value which differs the subtract result. (NOTE: negative for feature1 < feature2!)
         @param window: unfunctional here.
+        @return: compare classified result: 0, 1, 2 ...
         """
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
@@ -1198,6 +1302,7 @@ class Tools(object):
 
         @param sigma_edge: the sigma value which differs the subtract result. (NOTE: negative for feature1 < feature2!)
         @param window: unfunctional here.
+        @return: compare classified result: 0, 1, 2 ...
         """
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
@@ -1337,6 +1442,8 @@ class Tools(object):
 
         NOTE: support negative-positive, positive-only and negative-only feature (但是外部的映射字典不要弄错)
         """
+
+        # TODO debug: 不能返回负值，只能 0， 1， 2， 3， 4...
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
 
