@@ -17,6 +17,12 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def test(x='example_arg'):
+        print('This is a test static method in Tools with argument: %s' % x)
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def agg_cal(func, *args, process_num=None):
         """Multi-processing framework for functionX with agg_cal:
 
@@ -301,6 +307,28 @@ class Tools(object):
     
     # -----------------------------------------------------------------------------------------------------------------
     @staticmethod
+    def strip_node(node):
+
+        node['node_data'] = 'stripped'
+
+        if not node['terminal']:
+            return
+
+        node['class_data'] = 'stripped'
+
+        for key, value in node['class_kw'].items():
+            if isinstance(value, pd.Series):
+                node['class_kw'][key] = 'stripped'
+
+        # TODO: 应该使用dict的方法。优化数据库结构！
+
+        for key, args in node['feature_args'].items():
+            new_args = ['stripped'] + args[1: ]  # 这里的做法简单粗暴：认定每一个feature函数的第一个参数是DataFrame～ 
+            node['feature_args'][key] = new_args
+
+
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
     def recal_model(df, node_map, root_function):
         """从 node_map 空壳获取模型的 pos_should"""
 
@@ -309,19 +337,27 @@ class Tools(object):
         def build_leaf(node):
 
             # LV.6 计算feature
-            feature_func_list = [] 
-            for func in node['class_kw_func']:
-                if type(func) == type(Tools.agg_cal):
-                    feature_func_list.append(func)
 
-            feature_dict = {}
-            num = 1
-            for func, args in zip(node['feature_args'], feature_func_list):
-                args = [df] + args  # 在模型提取时，原始数据(DataFrame)被剔除了
-                feature = func(*args)  # feature计算参数全部为位置参数！
-                feature_name = 'feature_' + str(num)
-                feature_dict.update({feature_name: feature})
-                num += 1
+            # feature_func_list = [] 
+            # for func in node['class_kw_func'].values():
+            #     if type(func) == type(Tools.test):
+            #         feature_func_list.append(func)
+
+            # feature_dict = {}
+            # num = 1
+            # for func, args in zip(node['feature_args'], feature_func_list):  # zip里的顺序可能不一致。。。
+            #     args = [df] + args  # 在模型提取时，原始数据(DataFrame)被剔除了
+            #     feature = func(*args)  # feature计算参数全部为位置参数！
+            #     feature_name = 'feature_' + str(num)
+            #     feature_dict.update({feature_name: feature})
+            #     num += 1
+
+            for args in node['feature_args'].values():
+                new_args = [df] + args  # 这里简单粗暴地把源数据加回来
+                node['feature_args'] = new_args.copy()
+
+            for key, func in node['class_kw_func']:
+                node['class_kw'][key] = func(*node['feature_args'][func])
 
             # LV.5 计算分类
             class_kw_args = feature_dict.update(node['class_kw_args'])  # 在模型提取时，feature数据(Series)被剔除了
@@ -341,6 +377,7 @@ class Tools(object):
             return node_data
 
         def build_branch(name, node):
+            """在确保下一级别 node_data 已有的情况下使用"""
 
             # 获取下一个级别的数据
             child_names = []
@@ -360,45 +397,68 @@ class Tools(object):
             return node_data
 
         # step1: 获取树叶 --解决terminal
-        node_map_old = node_map.copy()  # avoid RuntimeError
-        for name, node in node_map_old.items():
+        # node_map_copy = node_map.copy()  # avoid RuntimeError
+        max_branch_len = 0
+        for name, node in node_map.items():
             if node['terminal']:
                 node_map[name]['node_data'] = build_leaf(node)
+            else:
+                max_branch_len = max(max_branch_len, len(name)) 
 
         # step2: 补充树枝
-        node_map_old = node_map.copy()
-        for name, node in node_map_old.items():
+        waiting_room = {} 
+        for room_num in list(range(len(max_branch_len))):
+            waiting_room[room_num + 1] = []  # +1 --对应name长度
+
+        for name in node_map.keys():
             if not node['terminal']:
+                room = len(name)
+                waiting_room[room].append(name)
+
+        room_num = max_branch_len
+        while room_num >= 1:
+            name_list = waiting_room[room_num]
+            name_list.sort()
+
+            for name in name_list:
+                node = node_map[name].copy()
                 node_map[name]['node_data'] = build_branch(name, node)
+
+            room_num -= 1   # 要从最远的末稍开始计算，直到deputy node
 
         # step3: 获取模型的 pos_should
         deputy_list = []
         for name in node_map.keys():
             if len(name) == 1:
                 deputy_list.append(name)
-        deputy_list.sort()  # 就是为了这个sort，分开两部写
+        deputy_list.sort()  # 就是为了这个sort，分开两块写
         
         root_args = []
         for name in deputy_list:
             root_args.append(node_map[name]['node_data'])
 
-        pos_should = root_function(*root_args)
+        pos_should_alpha = root_function(*root_args)
 
-        return pos_should
+        return pos_should_alpha
     
     # -----------------------------------------------------------------------------------------------------------------
     @staticmethod
     def get_mapped_data(class_data, map_value_list):
+        """condition类别不需要经过这个函数"""
 
-        mapped_data = pd.Sereis()
-        pass
+        mapped_data = class_data.copy()
 
-        return mapped_data  # not inplace. node_mao中并不保持分类映射后的数据，降低内存压力
+        num = 0
+        for value in map_value_list:
+            mapped_data[mapped_data == num] = value
+            num += 1
+
+        return mapped_data  # not inplace. node_map 中并不保持分类映射后的数据，降低内存压力
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_feature(node_data, *, kw_pb=0.1, refeature_pb=0.1, mul=1.5, positive_kw=True, **kwargs):
+    def mutate_feature(node_data, *, kw_pb=0.1, refeature_pb=0.1, mul=1.5, **kwargs):
         """LV.6 特征参数进化"""
         
         # 1. mutate kwargs of the classifier function which is not feature data.
@@ -415,47 +475,77 @@ class Tools(object):
             sep_list.append(value)
             
         kw_pb_each = Tools.probability_each(object_num=len(key_list), pb_for_all=kw_pb)
-            
+        
+        class_mut_flag = False
         for key, sep in zip(key_list, sep_list):
             
             if random.random() < kw_pb_each:
 
                 old_value = node_data['class_kw'][key]
-            
-                if sep is True:
+
+                # 目前这一块只有 window 一项是需要变异的，所以下方按照window的特点做出优化
+                start_value = 10
+                if sep is True:  # 如无提前设定sep，这里默认整数类型的sep （注意语法区别于 sep == True，混淆1）
                     if old_value > 20:
-                        sep = None  # 按 5% 自动计算步长
+                        sep = None  # None 将默认按 5% 自动计算步长
                     else:
                         sep = 1
-                
-                new_value = Tools.mutate_value(old_value, sep=sep, mul=mul)
-                if positive_kw and new_value <= 0:
-                        new_value = 10  # 直接设定10，跳出不利的循环
+
+                new_value = Tools.mutate_value(old_value, start_value=10, sep=sep, mul=mul)
                 
                 if new_value != old_value:
                     node_data['class_kw'][key] = new_value
+
+                    class_mut_flag = True
                     print('class_kw: "%s" value mutated.' % key)
             
         # 2. mutate feature
+        # TODO finish
         
-        key_list = []
+        # 提取feature计算函数
         func_list = []
-        
-        for key, value in node_data['class_kw_name'].items():
-            
-            if value:
-                key_list.append(key)
+        for value in node_data['class_kw_func'].values():
+            if type(value) == type(Tools.agg_cal):
                 func_list.append(value) 
-                
-        refeature_pb_each = Tools.probability_each(object_num=len(key_list), pb_for_all=refeature_pb)
         
-        for key, name in zip(key_list, func_list):
-            
-            if random.random() < refeature_pb_each:
-                
-                pass  # TODO: 名字、feature值 的进化
-            
-                # print('class refeatured.')
+        # 计算每个参数的变异概率
+        mut_arg_num = 0
+        for func in func_list:
+
+            for mut_data in node_data['feature_args_range'][func]:
+                if mut_data and mut_data['sep']:
+                    mut_arg_num += 1
+
+        arg_mut_pb = Tools.probability_each(object_num=mut_arg_num, pb_for_all=refeature_pb)
+
+        # 参数的变异
+        feature_mut_flag = False
+
+        if arg_mut_pb:
+            for func in func_list:
+
+                args_list = node_data['feature_args'][func]
+                mut_data_list = node_data['feature_args_range'][func]
+                args_list_new = []
+
+                index_num = 0
+                for arg, mut_data in zip(args_list, mut_data_list):
+                    if mut_data and random.random() < arg_mut_pb:
+                        start_value = mut_data['start']
+                        end_value = mut_data['end']
+                        sep_value = mut_data['sep']
+                        arg = Tools.mutate_value(arg, start_value=start_value, end_value=end_value, sep=sep_value)
+
+                    args_list_new.append(arg)
+                    index_num += 1
+
+                if args_list_new != args_list:
+                    node_data['feature_args'][func] = args_list_new.copy()
+
+                    feature_mut_flag = True
+                    print('feature_args for %s value mutated.' % func)
+
+        return class_mut_flag, feature_mut_flag
             
 
     # -----------------------------------------------------------------------------------------------------------------
@@ -568,7 +658,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value(value, *, sep=None, mul=3, scale=None, distribute='normal'):
+    def mutate_value(value, *, start_value=None, end_value=None, sep=None, mul=3.0, scale=None, distribute='normal'):
         """ 对指定数值，根据相关参数进行变异。
 
         @param value: 待变异的数值
@@ -614,6 +704,12 @@ class Tools(object):
             if num > 30:
                 print('over 30.')
                 break  # 避免过度，浪费计算资源
+
+        # 范围检验
+        if start_value and new_value < start_value:
+            new_value = start_value
+        if end_value and new_value > end_value:
+            new_value = end_value
 
         return new_value
 
@@ -1290,9 +1386,11 @@ class Tools(object):
         for num in list(range(len(sub_edge))):
             df_result['diff_tag'][df_result['difference'] >= sub_edge[num]] = num + 1
 
+        class_index = list(range(len(sub_edge) + 1))
+
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['diff_tag']
+        return df_result['diff_tag'], class_index
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1331,9 +1429,11 @@ class Tools(object):
         for num in list(range(len(sigma_edge))):
             df_result['diff_tag'][df_result['sigma_ratio'] >= sigma_edge[num]] = num + 1
 
+        class_index = list(range(len(sigma_edge) + 1))
+
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result
+        return df_result['diff_tag'], class_index
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1356,7 +1456,9 @@ class Tools(object):
         for num in list(range(len(cut_points))):
             df_result['cut'][df_result['data'] >= cut_points[num]] = num + 1
 
-        return df_result['cut']
+        class_index = list(range(len(cut_points) + 1))
+
+        return df_result['cut'], class_index
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1391,9 +1493,11 @@ class Tools(object):
             df_result['cut'][df_result['data'] > df_result['cut_ref']] = num + 1
             num += 1
 
+        class_index = list(range(num + 1))
+
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['cut']
+        return df_result['cut'], class_index
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1425,9 +1529,11 @@ class Tools(object):
             df_result['cut'][df_result['data'] > df_result['cut_ref']] = num + 1
             num += 1
 
+        class_index = list(range(num + 1))
+
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['cut']
+        return df_result['cut'], class_index
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1438,12 +1544,10 @@ class Tools(object):
         @param feature: feature Series (timestamp index) to be cut
         @param window: rolling window for range reference
         @param cut_sigmas: float(0-1) of sigma to cut features apart
-        @return: cut result: -2, -1, 0, 1, 2, 3...  (NOTE negative results here)
+        @return: cut result: 0, 1, 2, 3...  (NO negative results here)
 
         NOTE: support negative-positive, positive-only and negative-only feature (但是外部的映射字典不要弄错)
         """
-
-        # TODO debug: 不能返回负值，只能 0， 1， 2， 3， 4...
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
 
@@ -1452,7 +1556,7 @@ class Tools(object):
         df_result['cut'] = 0
 
         num_up = 0
-        num_down = 0
+        # num_down = 0
         cut_sigmas = sorted(cut_sigmas)  # NOTE
         for sigma in cut_sigmas:
 
@@ -1460,23 +1564,25 @@ class Tools(object):
                 feature_mean = feature.mean()
                 feature_edge = feature.std() * sigma
                 df_result['cut_ref_up'] = feature_mean + feature_edge
-                df_result['cut_ref_down'] = feature_mean - feature_edge  # 可为负
+                # df_result['cut_ref_down'] = feature_mean - feature_edge  # 可为负
 
             else:
                 df_result['data_mean'] = df_result['data'].rolling(window).mean().fillna(method='bfill')
                 df_result['sigma_value'] = df_result['data'].rolling(window).std().fillna(method='bfill') * sigma
                 df_result['cut_ref_up'] = df_result['data_mean'] + df_result['sigma_value']
-                df_result['cut_ref_down'] = df_result['data_mean'] - df_result['sigma_value']
+                # df_result['cut_ref_down'] = df_result['data_mean'] - df_result['sigma_value']
 
             df_result['cut'][df_result['data'] > df_result['cut_ref_up']] = num_up + 1
-            df_result['cut'][df_result['data'] < df_result['cut_ref_down']] = num_down - 1
+            # df_result['cut'][df_result['data'] < df_result['cut_ref_down']] = num_down - 1
 
             num_up += 1
-            num_down -= 1
+            # num_down -= 1
+
+        class_index = list(range(num_up + 1)) 
 
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['cut']
+        return df_result['cut'], class_index
 
     # 条件函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
