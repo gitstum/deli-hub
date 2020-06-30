@@ -308,24 +308,33 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
     @staticmethod
     def strip_node(node):
+        """将某一节点的大数据剔除，节约存储"""
 
+        # node结果数据
         node['node_data'] = 'stripped'
 
         if not node['terminal']:
+            # 加权前数据 --无
+            node['node_stripped'] = True
             return
 
+        # terminal分类赋值数据 --无
+
+        # terminal分类数据
         node['class_data'] = 'stripped'
 
-        for key, value in node['class_kw'].items():
+        # 指标数据
+        for kw, value in node['class_kw'].items():
             if isinstance(value, pd.Series):
-                node['class_kw'][key] = 'stripped'
+                node['class_kw'][kw] = 'stripped'
 
-        # TODO: 应该使用dict的方法。优化数据库结构！
+        # 源数据
+        for func, kwargs in node['feature_args'].items():
+            for param_name, value in kwargs.items():
+                if isinstance(value, pd.DataFrame):
+                    node['feature_args'][func][param_name] = 'stripped'  # 源数据只有一个：df
 
-        for key, args in node['feature_args'].items():
-            new_args = ['stripped'] + args[1: ]  # 这里的做法简单粗暴：认定每一个feature函数的第一个参数是DataFrame～ 
-            node['feature_args'][key] = new_args
-
+        node['node_stripped'] = True
 
     # -----------------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -334,30 +343,30 @@ class Tools(object):
 
         # TODO: debug
 
-        def build_leaf(node):
+        def build_leaf(node, df):
+            """计算某个终端节点"""
 
             # LV.6 计算feature
 
-            # feature_func_list = [] 
-            # for func in node['class_kw_func'].values():
-            #     if type(func) == type(Tools.test):
-            #         feature_func_list.append(func)
+            for func, kwargs in node['feature_args'].items():
+                for name, param in kwargs.items():
+                    if name == 'df_source':
+                        node['feature_args'][func][name] = df
 
-            # feature_dict = {}
-            # num = 1
-            # for func, args in zip(node['feature_args'], feature_func_list):  # zip里的顺序可能不一致。。。
-            #     args = [df] + args  # 在模型提取时，原始数据(DataFrame)被剔除了
-            #     feature = func(*args)  # feature计算参数全部为位置参数！
-            #     feature_name = 'feature_' + str(num)
-            #     feature_dict.update({feature_name: feature})
-            #     num += 1
+            for key, value in node['class_kw']:
+                if value == 'stripped':
+                    func = node['class_kw_func'][key]
+                    feature = func(**node['feature_args'][func])
+                    node['class_kw'][key] = feature
 
-            for args in node['feature_args'].values():
-                new_args = [df] + args  # 这里简单粗暴地把源数据加回来
-                node['feature_args'] = new_args.copy()
+            # list 方法 ------------
+            # for args in node['feature_args'].values():
+            #     new_args = [df] + args  # 这里简单粗暴地把源数据加回来
+            #     node['feature_args'] = new_args.copy()
 
-            for key, func in node['class_kw_func']:
-                node['class_kw'][key] = func(*node['feature_args'][func])
+            # for key, func in node['class_kw_func']:
+            #     node['class_kw'][key] = func(*node['feature_args'][func])
+
 
             # LV.5 计算分类
             class_kw_args = feature_dict.update(node['class_kw_args'])  # 在模型提取时，feature数据(Series)被剔除了
@@ -376,8 +385,8 @@ class Tools(object):
 
             return node_data
 
-        def build_branch(name, node):
-            """在确保下一级别 node_data 已有的情况下使用"""
+        def build_branch(name, node, node_map):
+            """计算某个中间节点。在确保下一级别 node_data 已有的情况下使用"""
 
             # 获取下一个级别的数据
             child_names = []
@@ -422,7 +431,7 @@ class Tools(object):
 
             for name in name_list:
                 node = node_map[name].copy()
-                node_map[name]['node_data'] = build_branch(name, node)
+                node_map[name]['node_data'] = build_branch(name, node, node_map)
 
             room_num -= 1   # 要从最远的末稍开始计算，直到deputy node
 
