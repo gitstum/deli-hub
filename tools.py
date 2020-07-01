@@ -303,12 +303,46 @@ class Tools(object):
 
         return any_true
 
+    # 模型 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def save_model(save_path, df_path, node_map, root_function, scores):
+
+        model = {}
+
+        model['scores'] = scores
+        model['data_path'] = df_path
+        model['root_function'] = root_function
+
+        for node in node_map.values():
+            Tools.strip_node(node)
+        model['node_map'] = node_map
+
+        np.save('%s' % save_path, model)
+
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def load_model(model_path, recal=False):
+
+        model = np.load('%s' % model_path, allow_pickle=True)
+        model = model.item()
+
+        if recal:
+            df = pd.read_csv(model['data_path'])
+            df['timestamp'] = pd.to_datetime(df.timestamp)
+            df.set_index('timestamp', drop=True, inplace=True)
+
+            Tools.recal_model(df, model['node_map', model['root_function']])
+
+        return model
+
+
     # 基因树 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     
     # -----------------------------------------------------------------------------------------------------------------
     @staticmethod
     def strip_node(node):
-        """将某一节点的大数据剔除，节约存储"""
+        """将某一节点的大数据剔除，节约存储。inplace"""
 
         # node结果数据
         node['node_data'] = 'stripped'
@@ -338,79 +372,68 @@ class Tools(object):
 
     # -----------------------------------------------------------------------------------------------------------------
     @staticmethod
+    def build_leaf(node, df):
+        """计算某个终端节点, inplace"""
+
+        # LV.6 计算feature
+
+        for func, kwargs in node['feature_args'].items():
+            for name, param in kwargs.items():
+                if name == 'df_source':
+                    node['feature_args'][func][name] = df  # 添加源数据
+
+        for key, value in node['class_kw']:
+            if value == 'stripped':
+                func = node['class_kw_func'][key]
+                feature = func(**node['feature_args'][func])
+                node['class_kw'][key] = feature  # 还原feature数据
+
+        # LV.5 计算分类
+        class_function = node['class_func']
+        node['class_data'] = class_function(*node['class_args'], **node['class_kw'])  # 还原分类数据
+
+        # LV.4 计算赋值
+        mapped_data = Tools.get_mapped_data(node['class_data'], node['map_value_list'])
+
+        # LV.3 --无
+
+        # LV.2 赋予权重，获得节点数据
+        node['node_data'] = mapped_data * node['weight']  # 还原结果数据
+
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def build_branch(name, node_map):
+        """计算某个中间节点。在确保下一级别 node_data 已有的情况下使用"""
+
+        node = node_map[name]
+
+        # 获取下一个级别的数据
+        child_names = []
+        slice_end = len(name)
+        for k in node_map.keys():  # 这里用到了外围的node_map
+            if k[:slice_end] == name and len(k) == slice_end + 1:
+                child_names.append(k)
+
+        args = []
+        for child in child_names:
+            args.append(node_map[child]['node_data'])
+
+        # 计算节点数据
+        node_function = node['node_function']
+        node['node_data'] = node_function(*args) * node['weight']
+
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
     def recal_model(df, node_map, root_function):
         """从 node_map 空壳获取模型的 pos_should"""
-
-        # TODO: debug
-
-        def build_leaf(node, df):
-            """计算某个终端节点"""
-
-            # LV.6 计算feature
-
-            for func, kwargs in node['feature_args'].items():
-                for name, param in kwargs.items():
-                    if name == 'df_source':
-                        node['feature_args'][func][name] = df
-
-            for key, value in node['class_kw']:
-                if value == 'stripped':
-                    func = node['class_kw_func'][key]
-                    feature = func(**node['feature_args'][func])
-                    node['class_kw'][key] = feature
-
-            # list 方法 ------------
-            # for args in node['feature_args'].values():
-            #     new_args = [df] + args  # 这里简单粗暴地把源数据加回来
-            #     node['feature_args'] = new_args.copy()
-
-            # for key, func in node['class_kw_func']:
-            #     node['class_kw'][key] = func(*node['feature_args'][func])
-
-
-            # LV.5 计算分类
-            class_kw_args = feature_dict.update(node['class_kw_args'])  # 在模型提取时，feature数据(Series)被剔除了
-            class_args = node['class_args']
-            class_func = node['class_func']
-            class_data = class_func(*class_args, **class_kw_args)  # 在模型提取时，分类数据(Series)被剔除了
-
-            # LV.4 计算赋值
-            map_value_list = node['map_value_list']
-            mapped_data = Tools.get_mapped_data(class_data, map_value_list)
-
-            # LV.3 --无
-
-            # LV.2 赋予权重，获得节点数据
-            node_data = mapped_data * node['weight']  # 在模型提取时，节点数据(Series)被从这里剔除了
-
-            return node_data
-
-        def build_branch(name, node, node_map):
-            """计算某个中间节点。在确保下一级别 node_data 已有的情况下使用"""
-
-            # 获取下一个级别的数据
-            child_names = []
-            slice_end = len(name)
-            for k in node_map.keys():  # 这里用到了外围的node_map
-                if k[:slice_end] == name and len(k) == slice_end + 1:
-                    child_names.append(k)
-
-            args = []
-            for child in child_names:
-                args.append(node_map[child]['node_data'])
-
-            # 计算节点数据
-            node_function = node['node_function']
-            node_data = node_function(*args) * node['weight']
-
-            return node_data
-
+  
         # step1: 获取树叶 --解决terminal
         # node_map_copy = node_map.copy()  # avoid RuntimeError
         max_branch_len = 0
         for name, node in node_map.items():
+
             if node['terminal']:
-                node_map[name]['node_data'] = build_leaf(node)
+                Tools.build_leaf(node)
             else:
                 max_branch_len = max(max_branch_len, len(name)) 
 
@@ -430,8 +453,7 @@ class Tools(object):
             name_list.sort()
 
             for name in name_list:
-                node = node_map[name].copy()
-                node_map[name]['node_data'] = build_branch(name, node, node_map)
+                Tools.build_branch(name, node_map)
 
             room_num -= 1   # 要从最远的末稍开始计算，直到deputy node
 
@@ -1639,6 +1661,145 @@ class Tools(object):
         result_sig = df_sig['result_sig'].fillna(0)
 
         return result_sig
+
+    # 增强、削弱函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sigmoid(x, coefficient=2):
+        """增幅限制函数"""
+
+        s = coefficient/(1+np.exp(-x/coefficient))
+        return s * 2 - coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mult_simple(vector_arr, abs_arr, coefficient=1.7):
+        """增强函数：简单增强（简单相乘）。
+
+        适用于一方是0/1类型，另一方-1/0/1类型，强化后者。如两个都是vector，将无法解释结果符号。"""
+
+        vector_arr.name = 'vector_arr'
+        abs_arr.name = 'abs_arr'
+
+        df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
+        df_mult['ref'] = df_mult['abs_arr'] * df_mult['vector_arr']
+        df_mult['result'] = df_mult['ref'].rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        return df_mult['result'] * coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mult_same(arr1, arr2, coefficient=1.7):
+        """增强函数：同向增强  --同方向时：保留符号，计算相乘结果；其他：0 """
+
+        arr1.name = 'arr1'
+        arr2.name = 'arr2'
+        df_mult = pd.concat([arr1, arr2], axis=1, sort=False).fillna(method='ffill')  # 为了应对不同时间周期的arr数据
+
+        arr1_abs = df_mult['arr1'].abs()
+        arr2_abs = df_mult['arr2'].abs()
+        arr_check_same = df_mult['arr1'] * df_mult['arr2']
+        arr_check_neg = df_mult['arr1'].copy()
+        arr_check_neg[arr_check_neg < 0] = -1
+        arr_check_neg[arr_check_neg > 0] = 1
+
+        df_mult['ref'] =  arr1_abs * arr2_abs
+        df_mult['ref'][arr_check_same <= 0] = 0
+        df_mult['ref'] = df_mult['ref'] * arr_check_neg
+
+        df_mult['result'] = df_mult['ref'].rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        return df_mult['result'] * coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mult_abs(main_arr, affect_arr, coefficient=1.7):
+        """增强函数：绝对增强  --主sig和副sig的绝对值相乘，改变主sig的幅度，不改变方向。"""
+
+        main_arr.name = 'main'
+        affect_arr.name = 'effect'
+        df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
+
+        effect_abs = df_mult['effect'].abs()
+        ref_arr = df_mult['main'] * effect_abs
+
+        df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        return df_mult['result'] * coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def divi_simple(vector_arr, abs_arr, coefficient=1.5):
+        """削弱函数：简单削弱（简单相除）， 且尽可能不超过dividend。
+
+        适用于一方是0/1类型，另一方-1/0/1类型，强化后者。如两个都是vector，将无法解释结果符号。"""
+
+        vector_arr.name = 'vector_arr'
+        abs_arr.name = 'abs_arr'
+
+        df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
+        ref_arr = df_mult['vector_arr'] / df_mult['abs_arr'] 
+        # 避免接近0时的消极影响：
+        restrict_arr = df_mult['vector_arr'].abs().rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+        df_mult['result'] = df_mult['result'] * restrict_arr
+
+        return df_mult['result'] * coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def divi_same(dividend, divisor, coefficient=1.5):
+        """削弱函数：同向削弱  --同方向时：保留符号，计算相除结果，且尽可能不超过dividend；其他：0 """
+
+        dividend.name = 'dividend'  # 被除数
+        divisor.name = 'divisor' 
+        df_mult = pd.concat([dividend, divisor], axis=1, sort=False).fillna(method='ffill')
+
+        dividend_abs = df_mult['dividend'].abs()
+        divisor_abs = df_mult['divisor'].abs()
+        arr_check_same = df_mult['dividend'] * df_mult['divisor']
+        arr_check_neg = df_mult['dividend'].copy()
+        arr_check_neg[arr_check_neg < 0] = -1
+        arr_check_neg[arr_check_neg > 0] = 1
+        restrict_arr = df_mult['dividend'].abs().rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        ref_arr =  dividend_abs / divisor_abs
+        ref_arr[arr_check_same <= 0] = 0
+        ref_arr = ref_arr * arr_check_neg
+
+        df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+        df_mult['result'] = df_mult['result'] * restrict_arr
+
+        return df_mult['result'] * coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def divi_abs(main_arr, affect_arr, coefficient=1.5):
+        """削弱函数：绝对削弱  --主sig处以副sig的绝对值，改变主sig的幅度，不改变方向。且尽可能不超过主sig。
+        （当 affect_arr > 0 时，和 divi_simple 相同？"""
+
+        main_arr.name = 'main'
+        affect_arr.name = 'effect'
+        df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
+
+        effect_abs = df_mult['effect'].abs()
+        # effect_abs = effect_abs.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+        ref_arr = df_mult['main'] / effect_abs
+        restrict_arr = df_mult['main'].abs().rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+        df_mult['result'] = df_mult['result'] * restrict_arr
+
+        return df_mult['result'] * coefficient
+
 
     # 合并 pos_should 信号的相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
