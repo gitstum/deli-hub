@@ -101,13 +101,23 @@ class Method(Enum):
     """
 
     ALL = ['cond_1', 'cond_2',
+           'mult_simple', 'mult_same', 'divi_simple', 'divi_same',
            'comb_sum', 'comb_vote1', 'comb_vote2', 'comb_vote3', 'comb_min',
            'perm_cond', 'perm_add', 'perm_sub', 'perm_up', 'perm_down']
 
-    #
-    CONDITION = ['cond_1',  # 在满足a(0/1)条件(1)的条件下，使用b的pos_should，其余0 【限2列】
-                 'cond_2'  # 在满足a方向（正负，对比0）的条件下，使用同方向（正负）的b的pos_should，其余0 【限2列】
+    # 条件求解「限2列」
+    CONDITION = ['cond_1',  # 在满足a(0/1)条件(1)的条件下，使用b的pos_should，其余0 【限2列】「(0/1)条件必须是terminal」
+                 'cond_2'  # 在满足a方向（正负，对比0）的条件下，使用同方向（正负）的b的pos_should，其余0 【限2列】「可用于高层树枝」
                  ]
+
+    # 增强、弱化(乘除) 「限2项」
+    ENFORCE = ['mult_simple',  # 简单相乘。适用于一方是0/1类型，另一方-1/0/1类型，强化后者 「(0/1)类型必须是terminal」(至少要降低其他的概率。。)
+               'mult_same',  # 条件相乘。同方向时：保留符号，计算相乘结果；其他：0。
+               'mult_abs',  # 绝对幅度变化。主sig和副sig的绝对值相乘，改变主sig的幅度，不改变方向。
+               'divi_simple',  # 简单相除。同上。「(0/1)类型必须是terminal」
+               'divi_same',  # 条件相除。同上。
+               'divi_abs'  # 绝对幅度变化。同上。
+               ]
 
     # 组合求解
     COMBINATION = ['comb_sum',  # 对各列signal进行加和
@@ -118,9 +128,7 @@ class Method(Enum):
                    ]
 
     # 排列求解：按序依次判断（/比较）
-    PERMUTATION = ['perm_cond',  # 在满足a方向（正负，对比0）的条件下，使用同方向（正负）的b的pos_should，其余0 【限2列】
-                   'perm_cond2',  # 在满足a条件（0/1）的情况下，使用b的pos_should，其余0  【限2列】
-                   'perm_add',  # 一直涨，sig值越来越大:1，否则0
+    PERMUTATION = ['perm_add',  # 一直涨，sig值越来越大:1，否则0
                    'perm_sub',  # 一直跌，sig值越来越小:1， 否则0
                    'perm_up',  # sig值震荡（含持平）上涨：1，否则0
                    'perm_down'  # sig值震荡（含持平）下跌：1，否则0

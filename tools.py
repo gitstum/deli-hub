@@ -17,6 +17,12 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def test(x='example_arg'):
+        print('This is a test static method in Tools with argument: %s' % x)
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def agg_cal(func, *args, process_num=None):
         """Multi-processing framework for functionX with agg_cal:
 
@@ -52,52 +58,59 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def str_time(f=6):
+    def str_time(keep_float=6):
         """获取str时间信息
 
-        @param f: 秒后要保留的小数位
+        @param keep_float: 秒后要保留的小数位
         @return: str时间
         """
 
-        if f == 0: f = -1
-        f -= 6
-        if f > 0: f = 0
+        if keep_float == 0: keep_float = -1
+        keep_float -= 6
+        if keep_float > 0: keep_float = 0
 
-        if f == 0:
+        if keep_float == 0:
             now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))
         else:
-            now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))[:f]
+            now = str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'))[:keep_float]
 
         return now
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def keep_float(number, float_num):
+    def shorten_float(number, keep_float):
         """float简化：保留小数点后x位
 
         @param number: 要化简的数
-        @param float_num: 要保留的小数位
+        @param keep_float: 要保留的小数位
         @return: 化简后的数
         """
 
-        number = number * 10 ** float_num
+        number = number * 10 ** keep_float
         number = int(number)
-        number = number / 10 ** float_num
+        number = number / 10 ** keep_float
 
         return number
 
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def fit_to_minimal(float_number, min_range=MIN_DISTANCE, simplify=True):
+    def fit_to_minimal(value, min_range=MIN_DISTANCE, modify=True):
         """To fit a price / price_delta / anydata to the (exchange's) minimal distance."""
 
-        result = round(float_number * (1 / min_range)) / (1 / min_range)
+        result = round(value * (1 / min_range)) / (1 / min_range)
 
-        if simplify:
-            float_num = len(str(min_range).split('.')[1])
-            result = Tools.keep_float(result, float_num)
+        if modify:
+            
+            if type(min_range) == type(0.1):
+                # 避免小数点后太长
+                float_num = len(str(min_range).split('.')[1])
+                result = Tools.shorten_float(result, float_num)  
+
+            else:
+                # 整数进，整数出
+                result = round(result)
 
         return result
 
@@ -290,7 +303,282 @@ class Tools(object):
 
         return any_true
 
+    # 模型 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def save_model(save_path, df_path, node_map, root_function, scores):
+
+        model = {}
+
+        model['scores'] = scores
+        model['data_path'] = df_path
+        model['root_function'] = root_function
+
+        for node in node_map.values():
+            Tools.strip_node(node)
+        model['node_map'] = node_map
+
+        np.save('%s' % save_path, model)
+
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def load_model(model_path, recal=False):
+
+        model = np.load('%s' % model_path, allow_pickle=True)
+        model = model.item()
+
+        if recal:
+            df = pd.read_csv(model['data_path'])
+            df['timestamp'] = pd.to_datetime(df.timestamp)
+            df.set_index('timestamp', drop=True, inplace=True)
+
+            Tools.recal_model(df, model['node_map', model['root_function']])
+
+        return model
+
+
     # 基因树 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def strip_node(node):
+        """将某一节点的大数据剔除，节约存储。inplace"""
+
+        # node结果数据
+        node['node_data'] = 'stripped'
+
+        if not node['terminal']:
+            # 加权前数据 --无
+            node['node_stripped'] = True
+            return
+
+        # terminal分类赋值数据 --无
+
+        # terminal分类数据
+        node['class_data'] = 'stripped'
+
+        # 指标数据
+        for kw, value in node['class_kw'].items():
+            if isinstance(value, pd.Series):
+                node['class_kw'][kw] = 'stripped'
+
+        # 源数据
+        for func, kwargs in node['feature_args'].items():
+            for param_name, value in kwargs.items():
+                if isinstance(value, pd.DataFrame):
+                    node['feature_args'][func][param_name] = 'stripped'  # 源数据只有一个：df
+
+        node['node_stripped'] = True
+
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def build_leaf(node, df):
+        """计算某个终端节点, inplace"""
+
+        # LV.6 计算feature
+
+        for func, kwargs in node['feature_args'].items():
+            for name, param in kwargs.items():
+                if name == 'df_source':
+                    node['feature_args'][func][name] = df  # 添加源数据
+
+        for key, value in node['class_kw']:
+            if value == 'stripped':
+                func = node['class_kw_func'][key]
+                feature = func(**node['feature_args'][func])
+                node['class_kw'][key] = feature  # 还原feature数据
+
+        # LV.5 计算分类
+        class_function = node['class_func']
+        node['class_data'] = class_function(*node['class_args'], **node['class_kw'])  # 还原分类数据
+
+        # LV.4 计算赋值
+        mapped_data = Tools.get_mapped_data(node['class_data'], node['map_value_list'])
+
+        # LV.3 --无
+
+        # LV.2 赋予权重，获得节点数据
+        node['node_data'] = mapped_data * node['weight']  # 还原结果数据
+
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def build_branch(name, node_map):
+        """计算某个中间节点。在确保下一级别 node_data 已有的情况下使用"""
+
+        node = node_map[name]
+
+        # 获取下一个级别的数据
+        child_names = []
+        slice_end = len(name)
+        for k in node_map.keys():  # 这里用到了外围的node_map
+            if k[:slice_end] == name and len(k) == slice_end + 1:
+                child_names.append(k)
+
+        args = []
+        for child in child_names:
+            args.append(node_map[child]['node_data'])
+
+        # 计算节点数据
+        node_function = node['node_function']
+        node['node_data'] = node_function(*args) * node['weight']
+
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def recal_model(df, node_map, root_function):
+        """从 node_map 空壳获取模型的 pos_should"""
+  
+        # step1: 获取树叶 --解决terminal
+        # node_map_copy = node_map.copy()  # avoid RuntimeError
+        max_branch_len = 0
+        for name, node in node_map.items():
+
+            if node['terminal']:
+                Tools.build_leaf(node)
+            else:
+                max_branch_len = max(max_branch_len, len(name)) 
+
+        # step2: 补充树枝
+        waiting_room = {} 
+        for room_num in list(range(len(max_branch_len))):
+            waiting_room[room_num + 1] = []  # +1 --对应name长度
+
+        for name in node_map.keys():
+            if not node['terminal']:
+                room = len(name)
+                waiting_room[room].append(name)
+
+        room_num = max_branch_len
+        while room_num >= 1:
+            name_list = waiting_room[room_num]
+            name_list.sort()
+
+            for name in name_list:
+                Tools.build_branch(name, node_map)
+
+            room_num -= 1   # 要从最远的末稍开始计算，直到deputy node
+
+        # step3: 获取模型的 pos_should
+        deputy_list = []
+        for name in node_map.keys():
+            if len(name) == 1:
+                deputy_list.append(name)
+        deputy_list.sort()  # 就是为了这个sort，分开两块写
+        
+        root_args = []
+        for name in deputy_list:
+            root_args.append(node_map[name]['node_data'])
+
+        pos_should_alpha = root_function(*root_args)
+
+        return pos_should_alpha
+    
+    # -----------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def get_mapped_data(class_data, map_value_list):
+        """condition类别不需要经过这个函数"""
+
+        mapped_data = class_data.copy()
+
+        num = 0
+        for value in map_value_list:
+            mapped_data[mapped_data == num] = value
+            num += 1
+
+        return mapped_data  # not inplace. node_map 中并不保持分类映射后的数据，降低内存压力
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mutate_feature(node_data, *, kw_pb=0.1, refeature_pb=0.1, mul=1.5, **kwargs):
+        """LV.6 特征参数进化"""
+        
+        # 1. mutate kwargs of the classifier function which is not feature data.
+        
+        key_list = []
+        sep_list = []
+        
+        for key, value in node_data['class_kw_sep'].items():
+            
+            if value is None:
+                continue
+                
+            key_list.append(key)
+            sep_list.append(value)
+            
+        kw_pb_each = Tools.probability_each(object_num=len(key_list), pb_for_all=kw_pb)
+        
+        class_mut_flag = False
+        for key, sep in zip(key_list, sep_list):
+            
+            if random.random() < kw_pb_each:
+
+                old_value = node_data['class_kw'][key]
+
+                # 目前这一块只有 window 一项是需要变异的，所以下方按照window的特点做出优化
+                start_value = 10
+                if sep is True:  # 如无提前设定sep，这里默认整数类型的sep （注意语法区别于 sep == True，混淆1）
+                    if old_value > 20:
+                        sep = None  # None 将默认按 5% 自动计算步长
+                    else:
+                        sep = 1
+
+                new_value = Tools.mutate_value(old_value, start_value=10, sep=sep, mul=mul)
+                
+                if new_value != old_value:
+                    node_data['class_kw'][key] = new_value
+
+                    class_mut_flag = True
+                    print('class_kw: "%s" value mutated.' % key)
+            
+        # 2. mutate feature
+        # TODO finish
+        
+        # 提取feature计算函数
+        func_list = []
+        for value in node_data['class_kw_func'].values():
+            if type(value) == type(Tools.agg_cal):
+                func_list.append(value) 
+        
+        # 计算每个参数的变异概率
+        mut_arg_num = 0
+        for func in func_list:
+
+            for mut_data in node_data['feature_args_range'][func]:
+                if mut_data and mut_data['sep']:
+                    mut_arg_num += 1
+
+        arg_mut_pb = Tools.probability_each(object_num=mut_arg_num, pb_for_all=refeature_pb)
+
+        # 参数的变异
+        feature_mut_flag = False
+
+        if arg_mut_pb:
+            for func in func_list:
+
+                args_list = node_data['feature_args'][func]
+                mut_data_list = node_data['feature_args_range'][func]
+                args_list_new = []
+
+                index_num = 0
+                for arg, mut_data in zip(args_list, mut_data_list):
+                    if mut_data and random.random() < arg_mut_pb:
+                        start_value = mut_data['start']
+                        end_value = mut_data['end']
+                        sep_value = mut_data['sep']
+                        arg = Tools.mutate_value(arg, start_value=start_value, end_value=end_value, sep=sep_value)
+
+                    args_list_new.append(arg)
+                    index_num += 1
+
+                if args_list_new != args_list:
+                    node_data['feature_args'][func] = args_list_new.copy()
+
+                    feature_mut_flag = True
+                    print('feature_args for %s value mutated.' % func)
+
+        return class_mut_flag, feature_mut_flag
+            
+
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -300,15 +588,14 @@ class Tools(object):
         NOTE: inplace.
         """
 
+        node_type = node_data['node_type']
+        if node_type == ('cond' or 'condition'):
+            return False  # condition类不计算权重
+
         weight = node_data['weight']
 
         if random.random() < reweight_pb:
-
-            new_weight = Tools.mutate_value(weight, sep=sep, mul=2)
-            while Tools.check_in_list(new_weight, [weight]):
-                new_weight = Tools.mutate_value(weight, sep=sep, mul=2)
-
-            node_data['weight'] = new_weight
+            node_data['weight'] = Tools.mutate_value(weight, sep=sep, mul=2)
             print('weight: changed.')
             return True
 
@@ -350,7 +637,7 @@ class Tools(object):
 
     @staticmethod
     def mutate_edge(node_data, *, move_pb, pop_pb, insert_pb, add_zoom_mul=1.5, **kwargs):
-        """LV.4 MUTATION: 特征分类截取进化函数，对edge的值和数量进行优化
+        """LV.5 MUTATION: 特征分类截取进化函数，对edge的值和数量进行优化
 
         @param node_data: 节点字典数据
         @param move_pb: 有至少一个edge发生移动的概率
@@ -380,8 +667,7 @@ class Tools(object):
                     print('class_edge: poped.')
 
             # 2. edge 太远插入
-            edge_addable = node_data['class_edge_addable']
-            if edge_addable and insert_pb:
+            if insert_pb:
                 inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, add_zoom_mul=add_zoom_mul)
                 if inserted:
                     mutation_tag = True
@@ -403,7 +689,7 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def mutate_value(value, *, sep, mul=3, scale=None, distribute='normal'):
+    def mutate_value(value, *, start_value=None, end_value=None, sep=None, mul=3.0, scale=None, distribute='normal'):
         """ 对指定数值，根据相关参数进行变异。
 
         @param value: 待变异的数值
@@ -412,18 +698,49 @@ class Tools(object):
         @param scale:　极端区域的变异幅度(>=0)
         @param distribute:
         @return: mutated value
+
         """
 
         if not distribute == 'normal':
             print('error 4765')
             return value  # 暂不支持其他类别变异
 
+        if sep is None:
+            sep = value / 20  
+            # 20：主观设定，按 5% 自动计算步长。
+            # 整数value的自动步长，要求value不能低于11，否则将sep将为0，无法逆转
+            # 最大的缺点在于，对于数值大的value，sep也大，因此很难长期保持 --整体使得value的变异有变小的倾向
+            if type(value) == type(1):
+                sep = round(sep)
+            else:
+                float_num = len(str(value).split('.')[1]) + 1
+                sep = Tools.shorten_float(sep, float_num)
+
+        if sep == 0:
+            return value
+
         if scale is None:
             scale = 1 / mul * 1.5  # 主观看着合适。。
 
-        end_flut_mul = np.random.normal(loc=1.0, scale=scale)
+        end_flut_mul = np.random.normal(loc=1.0, scale=scale)  # 末端变异增强参数
         delta = np.random.randn() * sep * mul * end_flut_mul
         new_value = Tools.fit_to_minimal(value + delta, min_range=sep)
+
+        # 如value未变化，循环操作促使改变
+        num = 0
+        while new_value == value:
+            delta = np.random.randn() * sep * mul * end_flut_mul
+            new_value = Tools.fit_to_minimal(value + delta, min_range=sep)
+            num += 1
+            if num > 30:
+                print('over 30.')
+                break  # 避免过度，浪费计算资源
+
+        # 范围检验
+        if start_value and new_value < start_value:
+            new_value = start_value
+        if end_value and new_value > end_value:
+            new_value = end_value
 
         return new_value
 
@@ -452,7 +769,7 @@ class Tools(object):
                 if random.random() < move_pb_each:
                     new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)
                     while Tools.check_in_list(new_edge, edge_list):
-                        new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)  # 这里的循环操作使改变成为必然
+                        new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)  # 避免与已有的其他edge重合
                     edge_list_new.append(new_edge)
                 else:
                     edge_list_new.append(edge)
@@ -590,7 +907,7 @@ class Tools(object):
 
     @staticmethod
     def mutate_mapping_list(node_data, *, revalue_pb, jump_pb=0.2, cut_pb, clear_pb, merge_pb, smooth_pb, **kwargs):
-        """LV.3 MUTATION: 特征分类赋值进化
+        """LV.4 MUTATION: 特征分类赋值进化
 
         @param node_data: dict of the node in node_map, include:
             - 'map_value_list': the LIST to get mutated.
@@ -607,10 +924,9 @@ class Tools(object):
         NOTE: inplace. all pb are independent. Error if node_data['class_args'] contains other than edges.
         """
 
-        mutation_tag = False
-        edge_addable = node_data['class_edge_addable']
+        mutation_tag = False 
         edge_list = node_data['class_args']  # 分类的切割点边界值 
-        map_type = node_data['map_type']
+        map_type = node_data['map_type'] 
 
         mutable_list = node_data['class_args_mutable']
         edges_clean = Tools.check_full_in_list(True, mutable_list)
@@ -627,7 +943,7 @@ class Tools(object):
                     print('mapping_list: merged')
 
             # 2. mapping_list 跳值平滑【优化】  --smooth_pb
-            if edge_addable and map_type == 'vector' and smooth_pb:
+            if map_type == 'vector' and smooth_pb:
                 smoothed = Tools.mutate_mapping_list_jump_smooth(node_data, smooth_pb=smooth_pb)
                 if smoothed:
                     mutation_tag = True
@@ -641,7 +957,7 @@ class Tools(object):
                     print('mapping_list: cleared')
 
             # 4. mapping_list 数目增加 --cut_pb
-            if edge_addable and cut_pb:
+            if cut_pb:
                 cut = Tools.mutate_mapping_list_cut_within(node_data, cut_pb=cut_pb)
                 if cut:
                     mutation_tag = True
@@ -692,7 +1008,7 @@ class Tools(object):
     def mutate_mapping_list_cut_within(node_data, *, cut_pb, add_zoom_mul=1.5):
         """mapping_list 数目增加：通过将某段赋值切开（但赋值仍相同）
 
-        注：这个功能在lv4 中有重复，且更科学（所以这里的概率设置低一些）
+        注：这个功能在LV.5 中有重复，且更科学（所以这里的概率设置低一些）
         """
 
         edge_list_new = node_data['class_args'].copy()
@@ -758,7 +1074,7 @@ class Tools(object):
     def mutate_mapping_list_clear_between(node_data, *, clear_pb):
         """mapping_list 同值间异类剔除【半优化】
 
-        注：这个功能在lv4 中有重复，且更科学（所以这里的概率设置低一些）
+        注：这个功能在LV.5 中有重复，且更科学（所以这里的概率设置低一些）
         """
 
         mapping_list_new = node_data['map_value_list'].copy()
@@ -819,7 +1135,7 @@ class Tools(object):
 
         @param node_data:
         @param smooth_pb:
-        @param smooth_zoom_mul: lv4 mutation 中抹掉分类的临界值的倍数
+        @param smooth_zoom_mul: LV.5 mutation 中抹掉分类的临界值的倍数
         """
 
         mapping_list_new = node_data['map_value_list'].copy()
@@ -961,10 +1277,15 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def get_node_id():
-        """获取节点的唯一ID"""
+    def get_id(id_type='node'):
+        """获取唯一ID：节点，分类器"""
 
-        return 'node_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
+        if id_type == 'node':
+            new_ID = 'node_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
+        elif id_type == 'classifier':
+            new_ID = 'class_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
+
+        return 
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1080,6 +1401,7 @@ class Tools(object):
 
         @param sub_edge: the value which differs the subtract result. (NOTE: negative for feature1 < feature2!)
         @param window: unfunctional here.
+        @return: compare classified result: 0, 1, 2 ...
         """
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
@@ -1095,9 +1417,11 @@ class Tools(object):
         for num in list(range(len(sub_edge))):
             df_result['diff_tag'][df_result['difference'] >= sub_edge[num]] = num + 1
 
+        class_index = list(range(len(sub_edge) + 1))
+
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['diff_tag']
+        return df_result['diff_tag'], class_index
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1107,6 +1431,7 @@ class Tools(object):
 
         @param sigma_edge: the sigma value which differs the subtract result. (NOTE: negative for feature1 < feature2!)
         @param window: unfunctional here.
+        @return: compare classified result: 0, 1, 2 ...
         """
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
@@ -1135,9 +1460,11 @@ class Tools(object):
         for num in list(range(len(sigma_edge))):
             df_result['diff_tag'][df_result['sigma_ratio'] >= sigma_edge[num]] = num + 1
 
+        class_index = list(range(len(sigma_edge) + 1))
+
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result
+        return df_result['diff_tag'], class_index
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1160,7 +1487,9 @@ class Tools(object):
         for num in list(range(len(cut_points))):
             df_result['cut'][df_result['data'] >= cut_points[num]] = num + 1
 
-        return df_result['cut']
+        class_index = list(range(len(cut_points) + 1))
+
+        return df_result['cut'], class_index
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1195,9 +1524,11 @@ class Tools(object):
             df_result['cut'][df_result['data'] > df_result['cut_ref']] = num + 1
             num += 1
 
+        class_index = list(range(num + 1))
+
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['cut']
+        return df_result['cut'], class_index
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1229,9 +1560,11 @@ class Tools(object):
             df_result['cut'][df_result['data'] > df_result['cut_ref']] = num + 1
             num += 1
 
+        class_index = list(range(num + 1))
+
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['cut']
+        return df_result['cut'], class_index
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -1242,7 +1575,7 @@ class Tools(object):
         @param feature: feature Series (timestamp index) to be cut
         @param window: rolling window for range reference
         @param cut_sigmas: float(0-1) of sigma to cut features apart
-        @return: cut result: -2, -1, 0, 1, 2, 3...  (NOTE negative results here)
+        @return: cut result: 0, 1, 2, 3...  (NO negative results here)
 
         NOTE: support negative-positive, positive-only and negative-only feature (但是外部的映射字典不要弄错)
         """
@@ -1254,7 +1587,7 @@ class Tools(object):
         df_result['cut'] = 0
 
         num_up = 0
-        num_down = 0
+        # num_down = 0
         cut_sigmas = sorted(cut_sigmas)  # NOTE
         for sigma in cut_sigmas:
 
@@ -1262,23 +1595,25 @@ class Tools(object):
                 feature_mean = feature.mean()
                 feature_edge = feature.std() * sigma
                 df_result['cut_ref_up'] = feature_mean + feature_edge
-                df_result['cut_ref_down'] = feature_mean - feature_edge  # 可为负
+                # df_result['cut_ref_down'] = feature_mean - feature_edge  # 可为负
 
             else:
                 df_result['data_mean'] = df_result['data'].rolling(window).mean().fillna(method='bfill')
                 df_result['sigma_value'] = df_result['data'].rolling(window).std().fillna(method='bfill') * sigma
                 df_result['cut_ref_up'] = df_result['data_mean'] + df_result['sigma_value']
-                df_result['cut_ref_down'] = df_result['data_mean'] - df_result['sigma_value']
+                # df_result['cut_ref_down'] = df_result['data_mean'] - df_result['sigma_value']
 
             df_result['cut'][df_result['data'] > df_result['cut_ref_up']] = num_up + 1
-            df_result['cut'][df_result['data'] < df_result['cut_ref_down']] = num_down - 1
+            # df_result['cut'][df_result['data'] < df_result['cut_ref_down']] = num_down - 1
 
             num_up += 1
-            num_down -= 1
+            # num_down -= 1
+
+        class_index = list(range(num_up + 1)) 
 
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['cut']
+        return df_result['cut'], class_index
 
     # 条件函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
@@ -1326,6 +1661,145 @@ class Tools(object):
         result_sig = df_sig['result_sig'].fillna(0)
 
         return result_sig
+
+    # 增强、削弱函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sigmoid(x, coefficient=2):
+        """增幅限制函数"""
+
+        s = coefficient/(1+np.exp(-x/coefficient))
+        return s * 2 - coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mult_simple(vector_arr, abs_arr, coefficient=1.7):
+        """增强函数：简单增强（简单相乘）。
+
+        适用于一方是0/1类型，另一方-1/0/1类型，强化后者。如两个都是vector，将无法解释结果符号。"""
+
+        vector_arr.name = 'vector_arr'
+        abs_arr.name = 'abs_arr'
+
+        df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
+        df_mult['ref'] = df_mult['abs_arr'] * df_mult['vector_arr']
+        df_mult['result'] = df_mult['ref'].rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        return df_mult['result'] * coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mult_same(arr1, arr2, coefficient=1.7):
+        """增强函数：同向增强  --同方向时：保留符号，计算相乘结果；其他：0 """
+
+        arr1.name = 'arr1'
+        arr2.name = 'arr2'
+        df_mult = pd.concat([arr1, arr2], axis=1, sort=False).fillna(method='ffill')  # 为了应对不同时间周期的arr数据
+
+        arr1_abs = df_mult['arr1'].abs()
+        arr2_abs = df_mult['arr2'].abs()
+        arr_check_same = df_mult['arr1'] * df_mult['arr2']
+        arr_check_neg = df_mult['arr1'].copy()
+        arr_check_neg[arr_check_neg < 0] = -1
+        arr_check_neg[arr_check_neg > 0] = 1
+
+        df_mult['ref'] =  arr1_abs * arr2_abs
+        df_mult['ref'][arr_check_same <= 0] = 0
+        df_mult['ref'] = df_mult['ref'] * arr_check_neg
+
+        df_mult['result'] = df_mult['ref'].rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        return df_mult['result'] * coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def mult_abs(main_arr, affect_arr, coefficient=1.7):
+        """增强函数：绝对增强  --主sig和副sig的绝对值相乘，改变主sig的幅度，不改变方向。"""
+
+        main_arr.name = 'main'
+        affect_arr.name = 'effect'
+        df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
+
+        effect_abs = df_mult['effect'].abs()
+        ref_arr = df_mult['main'] * effect_abs
+
+        df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        return df_mult['result'] * coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def divi_simple(vector_arr, abs_arr, coefficient=1.5):
+        """削弱函数：简单削弱（简单相除）， 且尽可能不超过dividend。
+
+        适用于一方是0/1类型，另一方-1/0/1类型，强化后者。如两个都是vector，将无法解释结果符号。"""
+
+        vector_arr.name = 'vector_arr'
+        abs_arr.name = 'abs_arr'
+
+        df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
+        ref_arr = df_mult['vector_arr'] / df_mult['abs_arr'] 
+        # 避免接近0时的消极影响：
+        restrict_arr = df_mult['vector_arr'].abs().rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+        df_mult['result'] = df_mult['result'] * restrict_arr
+
+        return df_mult['result'] * coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def divi_same(dividend, divisor, coefficient=1.5):
+        """削弱函数：同向削弱  --同方向时：保留符号，计算相除结果，且尽可能不超过dividend；其他：0 """
+
+        dividend.name = 'dividend'  # 被除数
+        divisor.name = 'divisor' 
+        df_mult = pd.concat([dividend, divisor], axis=1, sort=False).fillna(method='ffill')
+
+        dividend_abs = df_mult['dividend'].abs()
+        divisor_abs = df_mult['divisor'].abs()
+        arr_check_same = df_mult['dividend'] * df_mult['divisor']
+        arr_check_neg = df_mult['dividend'].copy()
+        arr_check_neg[arr_check_neg < 0] = -1
+        arr_check_neg[arr_check_neg > 0] = 1
+        restrict_arr = df_mult['dividend'].abs().rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        ref_arr =  dividend_abs / divisor_abs
+        ref_arr[arr_check_same <= 0] = 0
+        ref_arr = ref_arr * arr_check_neg
+
+        df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+        df_mult['result'] = df_mult['result'] * restrict_arr
+
+        return df_mult['result'] * coefficient
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def divi_abs(main_arr, affect_arr, coefficient=1.5):
+        """削弱函数：绝对削弱  --主sig处以副sig的绝对值，改变主sig的幅度，不改变方向。且尽可能不超过主sig。
+        （当 affect_arr > 0 时，和 divi_simple 相同？"""
+
+        main_arr.name = 'main'
+        affect_arr.name = 'effect'
+        df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
+
+        effect_abs = df_mult['effect'].abs()
+        # effect_abs = effect_abs.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+        ref_arr = df_mult['main'] / effect_abs
+        restrict_arr = df_mult['main'].abs().rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+
+        df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
+        df_mult['result'] = df_mult['result'] * restrict_arr
+
+        return df_mult['result'] * coefficient
+
 
     # 合并 pos_should 信号的相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
