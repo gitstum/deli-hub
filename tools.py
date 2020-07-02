@@ -12,7 +12,9 @@ import multiprocessing as mp
 from backtest.constant import *
 
 
+
 class Tools(object):
+
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -457,67 +459,6 @@ class Tools(object):
 
     # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def get_method():
-
-        all_method = {'condition': dict(cond_1=Tools.cond_1,
-                                        cond_2=Tools.cond_2
-                                        ),
-                      'enforce': dict(mult_simple=Tools.mult_simple,
-                                      mult_same=Tools.mult_same,
-                                      mult_abs=Tools.mult_abs,
-                                      divi_simple=Tools.divi_simple,
-                                      divi_same=Tools.divi_same,
-                                      divi_abs=Tools.divi_abs
-                                      ),
-                      'combination': dict(comb_sum=Tools.comb_sum,
-                                          comb_vote1=Tools.comb_vote1,
-                                          comb_vote2=Tools.comb_vote2,
-                                          comb_vote3=Tools.comb_vote3,
-                                          comb_min=Tools.comb_min
-                                          ),
-                      'permutation': dict(perm_add=Tools.perm_add,
-                                          perm_sub=Tools.perm_sub,
-                                          perm_up=Tools.perm_up,
-                                          perm_down=Tools.perm_down
-                                          ),
-                      'cut': dict(cut_number=Tools.cut_number,
-                                  cut_rank=Tools.cut_rank,
-                                  cut_sigma=Tools.cut_sigma,
-                                  cut_distance=Tools.cut_distance
-                                  ),
-                      'compare': dict(compare_distance=Tools.compare_distance,
-                                      compare_sigma=Tools.compare_sigma
-                                      )
-                      }
-
-        node_method = dict(condition=all_method['condition'],
-                           enforce=all_method['enforce'],
-                           combination=all_method['combination'],
-                           permutation=all_method['permutation']
-                           )
-
-        terminal_method = dict(cut=all_method['cut'],
-                               compare=all_method['compare'],
-                               permutation=all_method['permutation']
-                               )
-
-        method_abs_restrict = dict(cond_1=Tools.cond_1,
-                                   mult_simple=Tools.mult_simple,
-                                   divi_simple=Tools.divi_simple
-                                   )
-
-
-
-    # LV.0 ------------------------------------------------------------------------------------------------------------
-    @staticmethod
-    def get_method_exchange_list():
-
-        pass
-
-
-
-    # LV.0 ------------------------------------------------------------------------------------------------------------
-    @staticmethod
     def strip_node(node):
         """将某一节点的大数据剔除，节约存储。inplace"""
 
@@ -735,9 +676,66 @@ class Tools(object):
 
     # LV.3 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def get_lv3_functions():
+    def get_lv3_methods():
+        """node method / merge method"""
 
-        lv3_method = {}
+        lv3_method = dict(cond_1=Tools.cond_1,
+                          cond_2=Tools.cond_2,
+
+                          mult_simple=Tools.mult_simple,
+                          mult_same=Tools.mult_same,
+                          mult_abs=Tools.mult_abs,
+                          divi_simple=Tools.divi_simple,
+                          divi_same=Tools.divi_same,
+                          divi_abs=Tools.divi_abs,
+
+                          comb_sum=Tools.comb_sum,
+                          comb_vote0=Tools.comb_vote0,
+                          comb_vote1=Tools.comb_vote1,
+                          comb_vote2=Tools.comb_vote2,
+                          comb_vote3=Tools.comb_vote3,
+                          comb_min=Tools.comb_min,
+
+                          perm_add=Tools.perm_add,
+                          perm_sub=Tools.perm_sub,
+                          perm_up=Tools.perm_up,
+                          perm_down=Tools.perm_down,
+                          sig_trend_strict=Tools.sig_trend_strict,
+                          sig_trend_loose=Tools.sig_trend_loose,
+                          sig_trend_start_end=Tools.sig_trend_start_end
+                          )
+
+        return lv3_method
+
+    # LV.3 ------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def mutate_node_function(node_data, *, func, func_pb):
+        """LV.3 MUTATION: 信号合并函数进化"""
+
+        func = node_data['node_function']
+
+        # 可互换的函数分类（没有重叠，函数不会同时处在不同分类。下方pb_each计算的基础）
+        exchange_dict = {'comb': [Tools.comb_sum, Tools.comb_min,
+                                  Tools.comb_vote0, Tools.comb_vote1, Tools.comb_vote2, Tools.comb_vote3],
+                         'perm': [Tools.perm_add, Tools.perm_up, Tools.perm_sub, Tools.perm_down],
+                         'trend': [Tools.sig_trend_strict, Tools.sig_trend_loose, Tools.sig_trend_start_end],
+                         '0/1': [Tools.cond_1, Tools.mult_simple, Tools.divi_simple],  # same rules for args
+                         'mult': [Tools.mult_same, Tools.mult_abs, Tools.divi_same, Tools.divi_abs]
+                         }
+
+        for method_list in exchange_dict.values():
+            if func in method_list:
+                method_list.remove(func)  # 每次都会重写exchange_dict，所以这里不用copy()
+
+                if random.random() < func_pb:
+                    target_num = random.randint(0, len(method_list) - 1)  # 不能同时有多个变异项（不独立），所以用这种方法
+                    new_func = method_list[target_num] 
+                    node_data['node_function'] = new_func
+
+                    print('LV.3 function mutated.')
+                    return True
+
+        return False
 
     # LV.4-5 ----------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -1136,6 +1134,30 @@ class Tools(object):
                                                   new_mutable_list=mutable_list_new)
 
         return node_updated
+
+    # LV.5 ------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def get_lv5_method():
+        """terminal method / classifier"""
+
+        lv5_method = dict(cut_number=Tools.cut_number,
+                          cut_rank=Tools.cut_rank,
+                          cut_sigma=Tools.cut_sigma,
+                          cut_distance=Tools.cut_distance,
+
+                          compare_distance=Tools.compare_distance,
+                          compare_sigma=Tools.compare_sigma,
+
+                          perm_add=Tools.perm_add,
+                          perm_sub=Tools.perm_sub,
+                          perm_up=Tools.perm_up,
+                          perm_down=Tools.perm_down,
+                          sig_trend_strict=Tools.sig_trend_strict,
+                          sig_trend_loose=Tools.sig_trend_loose,
+                          sig_trend_start_end=Tools.sig_trend_start_end
+                          )
+
+        return lv5_method
 
     # LV.5 ------------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -1886,8 +1908,7 @@ class Tools(object):
 
         return signal * weight
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # ----------------------------------------------------------------------------------------------------------------
     @staticmethod
     def sig_to_one(method, *signals):
         """分流函数
@@ -1897,7 +1918,7 @@ class Tools(object):
         @return: pos_should signal
         """
 
-        if not method in Method.ALL.value:
+        if not method in Method.ALL_NAME.value:
             print("Can't find method '%s' in constant.Method." % method)
             return pd.DataFrame()
 
@@ -1938,7 +1959,7 @@ class Tools(object):
 
     @staticmethod
     def comb_sum(*signals):
-        """Pos_should signal merge method: comb_sum1  
+        """Pos_should signal merge method: comb_sum  
         ---对各列signal进行加和
 
         @param signals: pos_should signals Series (weighted)
@@ -1954,6 +1975,20 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
+    def comb_vote0(*signals):
+        """引用各列signal，按-1,0,1赋值（消除weight和小数点）再加和，输出为：-1/0/1"""
+
+        df_sig = Tools.sig_merge(*signals)
+
+        df_sig[df_sig > 0] = 1
+        df_sig[df_sig < 0] = -1
+        df_sig[df_sig == 0] = 0  # exclude float.
+
+        return df_sig.sum(axis=1)
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
     def comb_vote1(*signals):
         """Pos_should signal merge method: comb_vote1  
         ---使用各列signal投票，加和，输出为：-1/0/1
@@ -1962,7 +1997,7 @@ class Tools(object):
         @return: pos_should signal  -- -1/0/1
         """
 
-        result_ref = Tools.comb_sum(*signals)  # NOTE this depends on comb_sum1()
+        result_ref = Tools.comb_sum(*signals)  # NOTE this depends on comb_sum()
 
         df_result = pd.DataFrame(result_ref, columns=['result_ref'])
         df_result['result_sig'] = 0
