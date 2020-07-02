@@ -100,11 +100,11 @@ class Tools(object):
         result = round(value * (1 / min_range)) / (1 / min_range)
 
         if modify:
-            
+
             if type(min_range) == type(0.1):
                 # 避免小数点后太长
                 float_num = len(str(min_range).split('.')[1])
-                result = Tools.shorten_float(result, float_num)  
+                result = Tools.shorten_float(result, float_num)
 
             else:
                 # 整数进，整数出
@@ -148,16 +148,15 @@ class Tools(object):
             count_dict = {}
             num = 0
             while num <= len(args):  # NOTE '=' here.
-                
+
                 happen_list = []
                 chose_list, left_list = Tools.cut_list_into_combination(num, args)
-                
+
                 for chose, left in zip(chose_list, left_list):
-                    
                     chose_happen = Tools.cal_event_pb(*chose)['all_happen_pb']
                     left_not_happen = Tools.cal_event_pb(*left)['no_happen_pb']
                     happen_list.append(chose_happen * left_not_happen)
-                    
+
                 count_dict['%s event happen' % num] = sum(happen_list)
                 num += 1
 
@@ -312,7 +311,7 @@ class Tools(object):
             return False
 
     # 模型 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    
+
     # -----------------------------------------------------------------------------------------------------------------
     @staticmethod
     def save_model(save_path, df_path, node_map, root_function, scores):
@@ -356,9 +355,10 @@ class Tools(object):
         elif id_type == 'classifier':
             new_ID = 'class_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
 
-        return 
+        return
 
-    # LV.0 ------------------------------------------------------------------------------------------------------------
+        # LV.0 ------------------------------------------------------------------------------------------------------------
+
     @staticmethod
     def get_node_name(node_map, node_mother_name):
         """新添加node时，获取node名称（如'ACB')
@@ -410,7 +410,6 @@ class Tools(object):
         @param scale:　极端区域的变异幅度(>=0)
         @param distribute:
         @return: mutated value
-
         """
 
         if not distribute == 'normal':
@@ -418,7 +417,7 @@ class Tools(object):
             return value  # 暂不支持其他类别变异
 
         if sep is None:
-            sep = value / 20  
+            sep = value / 20
             # 20：主观设定，按 5% 自动计算步长。
             # 整数value的自动步长，要求value不能低于11，否则将sep将为0，无法逆转
             # 最大的缺点在于，对于数值大的value，sep也大，因此很难长期保持 --整体使得value的变异有变小的倾向
@@ -455,7 +454,68 @@ class Tools(object):
             new_value = end_value
 
         return new_value
-        
+
+    # LV.0 ------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def get_method():
+
+        all_method = {'condition': dict(cond_1=Tools.cond_1,
+                                        cond_2=Tools.cond_2
+                                        ),
+                      'enforce': dict(mult_simple=Tools.mult_simple,
+                                      mult_same=Tools.mult_same,
+                                      mult_abs=Tools.mult_abs,
+                                      divi_simple=Tools.divi_simple,
+                                      divi_same=Tools.divi_same,
+                                      divi_abs=Tools.divi_abs
+                                      ),
+                      'combination': dict(comb_sum=Tools.comb_sum,
+                                          comb_vote1=Tools.comb_vote1,
+                                          comb_vote2=Tools.comb_vote2,
+                                          comb_vote3=Tools.comb_vote3,
+                                          comb_min=Tools.comb_min
+                                          ),
+                      'permutation': dict(perm_add=Tools.perm_add,
+                                          perm_sub=Tools.perm_sub,
+                                          perm_up=Tools.perm_up,
+                                          perm_down=Tools.perm_down
+                                          ),
+                      'cut': dict(cut_number=Tools.cut_number,
+                                  cut_rank=Tools.cut_rank,
+                                  cut_sigma=Tools.cut_sigma,
+                                  cut_distance=Tools.cut_distance
+                                  ),
+                      'compare': dict(compare_distance=Tools.compare_distance,
+                                      compare_sigma=Tools.compare_sigma
+                                      )
+                      }
+
+        node_method = dict(condition=all_method['condition'],
+                           enforce=all_method['enforce'],
+                           combination=all_method['combination'],
+                           permutation=all_method['permutation']
+                           )
+
+        terminal_method = dict(cut=all_method['cut'],
+                               compare=all_method['compare'],
+                               permutation=all_method['permutation']
+                               )
+
+        method_abs_restrict = dict(cond_1=Tools.cond_1,
+                                   mult_simple=Tools.mult_simple,
+                                   divi_simple=Tools.divi_simple
+                                   )
+
+
+
+    # LV.0 ------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def get_method_exchange_list():
+
+        pass
+
+
+
     # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
     def strip_node(node):
@@ -543,7 +603,7 @@ class Tools(object):
     @staticmethod
     def recal_model(df, node_map, root_function):
         """从 node_map 空壳获取模型的 pos_should"""
-  
+
         # step1: 获取树叶 --解决terminal
         # node_map_copy = node_map.copy()  # avoid RuntimeError
         max_branch_len = 0
@@ -552,10 +612,10 @@ class Tools(object):
             if node['terminal']:
                 Tools.build_leaf(node)
             else:
-                max_branch_len = max(max_branch_len, len(name)) 
+                max_branch_len = max(max_branch_len, len(name))
 
-        # step2: 补充树枝
-        waiting_room = {} 
+                # step2: 补充树枝
+        waiting_room = {}
         for room_num in list(range(len(max_branch_len))):
             waiting_room[room_num + 1] = []  # +1 --对应name长度
 
@@ -572,7 +632,7 @@ class Tools(object):
             for name in name_list:
                 Tools.build_branch(name, node_map)
 
-            room_num -= 1   # 要从最远的末稍开始计算，直到deputy node
+            room_num -= 1  # 要从最远的末稍开始计算，直到deputy node
 
         # step3: 获取模型的 pos_should
         deputy_list = []
@@ -580,7 +640,7 @@ class Tools(object):
             if len(name) == 1:
                 deputy_list.append(name)
         deputy_list.sort()  # 就是为了这个sort，分开两块写
-        
+
         root_args = []
         for name in deputy_list:
             root_args.append(node_map[name]['node_data'])
@@ -588,7 +648,7 @@ class Tools(object):
         pos_should_alpha = root_function(*root_args)
 
         return pos_should_alpha
-    
+
     # LV.1 ------------------------------------------------------------------------------------------------------------
     @staticmethod
     def exchange_node(d1, d2, d1_node_name, d2_node_name):
@@ -672,6 +732,12 @@ class Tools(object):
 
         else:
             return False
+
+    # LV.3 ------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def get_lv3_functions():
+
+        lv3_method = {}
 
     # LV.4-5 ----------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -763,9 +829,9 @@ class Tools(object):
         NOTE: inplace. all pb are independent. Error if node_data['class_args'] contains other than edges.
         """
 
-        mutation_tag = False 
+        mutation_tag = False
         edge_list = node_data['class_args']  # 分类的切割点边界值 
-        map_type = node_data['map_type'] 
+        map_type = node_data['map_type']
 
         mutable_list = node_data['class_args_mutable']
         edges_clean = Tools.check_full_in_list(True, mutable_list)
@@ -1223,7 +1289,6 @@ class Tools(object):
                                             Tools.mutate_one_value_in_map(cut_value, map_type=map_type))
                     mapping_list_new.insert(i + add_num, cut_value)  # cut_value中间夹着一个变异后的value
 
-
                     add_num += 2  # NOTE 2 here.
 
         # 更新node
@@ -1283,25 +1348,25 @@ class Tools(object):
     @staticmethod
     def mutate_feature(node_data, *, kw_pb=0.1, refeature_pb=0.1, mul=1.5, **kwargs):
         """LV.6 特征参数进化"""
-        
+
         # 1. mutate kwargs of the classifier function which is not feature data.
-        
+
         key_list = []
         sep_list = []
-        
+
         for key, value in node_data['class_kw_sep'].items():
-            
+
             if value is None:
                 continue
-                
+
             key_list.append(key)
             sep_list.append(value)
-            
+
         kw_pb_each = Tools.probability_each(object_num=len(key_list), pb_for_all=kw_pb)
-        
+
         class_mut_flag = False
         for key, sep in zip(key_list, sep_list):
-            
+
             if random.random() < kw_pb_each:
 
                 old_value = node_data['class_kw'][key]
@@ -1315,23 +1380,23 @@ class Tools(object):
                         sep = 1
 
                 new_value = Tools.mutate_value(old_value, start_value=10, sep=sep, mul=mul)
-                
+
                 if new_value != old_value:
                     node_data['class_kw'][key] = new_value
 
                     class_mut_flag = True
                     print('class_kw: "%s" value mutated.' % key)
-            
+
         # 2. mutate feature
         # TODO finish
-        
+
         # 提取feature计算函数
         func_list = []
         for value in node_data['class_kw_func'].values():
             if type(value) == type(Tools.agg_cal):
-                func_list.append(value) 
-        
-        # 计算每个参数的变异概率
+                func_list.append(value)
+
+                # 计算每个参数的变异概率
         mut_arg_num = 0
         for func in func_list:
 
@@ -1587,7 +1652,7 @@ class Tools(object):
             num_up += 1
             # num_down -= 1
 
-        class_index = list(range(num_up + 1)) 
+        class_index = list(range(num_up + 1))
 
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
@@ -1647,7 +1712,7 @@ class Tools(object):
     def sigmoid(x, coefficient=2):
         """增幅限制函数"""
 
-        s = coefficient/(1+np.exp(-x/coefficient))
+        s = coefficient / (1 + np.exp(-x / coefficient))
         return s * 2 - coefficient
 
     # -----------------------------------------------------------------------------------------------------------------
@@ -1684,7 +1749,7 @@ class Tools(object):
         arr_check_neg[arr_check_neg < 0] = -1
         arr_check_neg[arr_check_neg > 0] = 1
 
-        df_mult['ref'] =  arr1_abs * arr2_abs
+        df_mult['ref'] = arr1_abs * arr2_abs
         df_mult['ref'][arr_check_same <= 0] = 0
         df_mult['ref'] = df_mult['ref'] * arr_check_neg
 
@@ -1721,7 +1786,7 @@ class Tools(object):
         abs_arr.name = 'abs_arr'
 
         df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
-        ref_arr = df_mult['vector_arr'] / df_mult['abs_arr'] 
+        ref_arr = df_mult['vector_arr'] / df_mult['abs_arr']
         # 避免接近0时的消极影响：
         restrict_arr = df_mult['vector_arr'].abs().rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
 
@@ -1737,7 +1802,7 @@ class Tools(object):
         """削弱函数：同向削弱  --同方向时：保留符号，计算相除结果，且尽可能不超过dividend；其他：0 """
 
         dividend.name = 'dividend'  # 被除数
-        divisor.name = 'divisor' 
+        divisor.name = 'divisor'
         df_mult = pd.concat([dividend, divisor], axis=1, sort=False).fillna(method='ffill')
 
         dividend_abs = df_mult['dividend'].abs()
@@ -1748,7 +1813,7 @@ class Tools(object):
         arr_check_neg[arr_check_neg > 0] = 1
         restrict_arr = df_mult['dividend'].abs().rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
 
-        ref_arr =  dividend_abs / divisor_abs
+        ref_arr = dividend_abs / divisor_abs
         ref_arr[arr_check_same <= 0] = 0
         ref_arr = ref_arr * arr_check_neg
 
@@ -1777,7 +1842,6 @@ class Tools(object):
         df_mult['result'] = df_mult['result'] * restrict_arr
 
         return df_mult['result'] * coefficient
-
 
     # 合并 pos_should 信号的相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
@@ -1984,12 +2048,15 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def sig_trend(*signals):
+    def sig_delta(*signals):
         """Compare each Series line by line
 
         @param signals: Series
         @return: DataFrame
+
+        note: old function name: sig_trend
         """
+
         df_sig = Tools.sig_merge(*signals)
 
         column_num = len(df_sig.columns)
@@ -2021,7 +2088,34 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def sig_one_direction(*signals):
+    def sig_trend_loose(*signals):
+        """判断指标的趋势：一个比一个大：1, 一个比一个小：-1, 不一定：0
+        比sig_trend_strict宽松：可分部分相等（部分指标数据连续相等，只要不全都相等），趋势仍成立。
+        """
+
+        df_trend = Tools.sig_delta(*signals)
+        arr_temp = np.array(df_trend)
+
+        direction_list = []
+        for n in range(arr_temp.shape[0]):
+            line = arr_temp[n]
+            ref = 0
+            if line.min() >= 0:
+                ref = 1
+                if Tools.check_full_in_list(0, list(line), check_type='equal'):
+                    ref = 0  # 排除全部是0的
+            elif line.max() <= 0:
+                ref = -1
+            direction_list.append(ref)
+
+        trend = pd.Series(direction_list, index=df_trend.index)
+
+        return trend
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def sig_trend_strict(*signals):
         """Check each df line to see if values (in each signal) goes straight or not
 
         @param signals: Series
@@ -2029,9 +2123,11 @@ class Tools(object):
             -1: signals go straight down
             1: signals go straight up
             0: signals don't go straight down (even/rebound within)
+
+        note: old function name: sig_one_direction
         """
 
-        df_trend = Tools.sig_trend(*signals)
+        df_trend = Tools.sig_delta(*signals)
         trend_signals = Tools.df_to_series(df_trend)
         result_ref = Tools.comb_min(*trend_signals)  # 注意这里用拆包语法
 
@@ -2046,14 +2142,16 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def sig_direction(*signals):
-        """Check each df line to see if values (in each signal) eventually goes up/down
+    def sig_trend_start_end(*signals):
+        """Check each df line to see if values (in each signal) eventually(start vs. end) goes up/down
 
         @param signals: Series
         @return:
             -1: signals go down eventually but not straight
             1: signals go up eventually but not straight
             0: other situations: even, straight
+
+
         """
 
         # if len(signals) < 3:
@@ -2065,7 +2163,7 @@ class Tools(object):
         df_sig['sig_end'] = df_sig.iloc[:, -2]  # -2: cause 'sig_start' became -1 
         df_sig['direction'] = df_sig['sig_end'] - df_sig['sig_start']
 
-        result_ref = Tools.sig_one_direction(*signals)
+        result_ref = Tools.sig_trend_strict(*signals)
         df_sig['one_direction'] = result_ref
 
         df_sig['result_ref'] = df_sig['direction'][df_sig['one_direction'] == 0]
@@ -2088,7 +2186,7 @@ class Tools(object):
         @return: signal: 0/1
         """
 
-        result_ref = Tools.sig_one_direction(*signals)
+        result_ref = Tools.sig_trend_strict(*signals)
 
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
@@ -2108,7 +2206,7 @@ class Tools(object):
         @return: signal: 0/1
         """
 
-        result_ref = Tools.sig_one_direction(*signals)
+        result_ref = Tools.sig_trend_strict(*signals)
 
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
@@ -2128,7 +2226,7 @@ class Tools(object):
         @return: signal: 0/1
         """
 
-        result_ref = Tools.sig_direction(*signals)
+        result_ref = Tools.sig_trend_start_end(*signals)
 
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
@@ -2148,7 +2246,7 @@ class Tools(object):
         @return: signal: 0/1
         """
 
-        result_ref = Tools.sig_direction(*signals)
+        result_ref = Tools.sig_trend_start_end(*signals)
 
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
