@@ -120,7 +120,7 @@ class Method(Enum):
                ]
 
     # 组合求解
-    COMBINATION = ['comb_sum',  # 对各列signal进行加和
+    COMBINATION = ['comb_sum',  # 对各列signal进行加和，含小数
                    'comb_vote1',  # 使用各列signal投票，加和，输出为：-1/0/1
                    'comb_vote2',  # 使用各列signal投票，须无反对票，输出为：-1/0/1
                    'comb_vote3',  # 使用各列signal投票，须全票通过，输出为：-1/0/1
@@ -131,7 +131,10 @@ class Method(Enum):
     PERMUTATION = ['perm_add',  # 一直涨，sig值越来越大:1，否则0
                    'perm_sub',  # 一直跌，sig值越来越小:1， 否则0
                    'perm_up',  # sig值震荡（含持平）上涨：1，否则0
-                   'perm_down'  # sig值震荡（含持平）下跌：1，否则0
+                   'perm_down',  # sig值震荡（含持平）下跌：1，否则0
+                   'sig_trend_strict',  # sig一直上涨：1， sig一直下跌：-1， 否则0
+                   'sig_trend_loose',  # sig整体上涨（可局部持平）：1， sig整体下跌（可局部持平）：-1， 否则0
+                   'sig_trend_start_end'  # sig震荡上涨：1，sig值震荡下跌：-1，否则0 （只考虑头尾）
                    ]
 
 
