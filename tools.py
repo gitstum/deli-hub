@@ -347,6 +347,7 @@ class Tools(object):
         return model
 
     # 基因树 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
     # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
     def get_id(id_type='node'):
@@ -490,7 +491,7 @@ class Tools(object):
 
     # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def build_leaf(node, df):
+    def rebuild_leaf(node, df):
         """计算某个终端节点, inplace"""
 
         # LV.6 计算feature
@@ -551,7 +552,7 @@ class Tools(object):
         for name, node in node_map.items():
 
             if node['terminal']:
-                Tools.build_leaf(node)
+                Tools.rebuild_leaf(node)
             else:
                 max_branch_len = max(max_branch_len, len(name))
 
@@ -654,6 +655,20 @@ class Tools(object):
 
     # LV.2 ------------------------------------------------------------------------------------------------------------
     @staticmethod
+    def cal_weight(signal, weight):
+        """Return a weighted pos_should signal Series.
+
+        @param signal: a signal Series
+            index: timestamp
+            value: pos_should signal
+        @param weight: weight of the signal
+        @return: weighted pos_should signal Series
+        """
+
+        return signal * weight
+
+    # LV.2 ------------------------------------------------------------------------------------------------------------
+    @staticmethod
     def mutate_weight(node_data, *, reweight_pb, sep=0.02, **kwargs):
         """LV.2 mutation: 权重进化函数
 
@@ -709,10 +724,25 @@ class Tools(object):
 
     # LV.3 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def mutate_node_function(node_data, *, func, func_pb):
+    def mutate_node_function(node_data, *, refunc_pb, cross_refunc_pb):
         """LV.3 MUTATION: 信号合并函数进化"""
 
         func = node_data['node_function']
+        new_func = None
+
+        # 1. 类型改变。  --在改变类型后，传参约束条件会“变宽”，所以下列映射有方向性，是不可逆的。
+
+        cross_exchange_dict = {Tools.mult_simple: Tools.mult_abs,  # 在simple有意义的情况下，计算结果不会有变化
+                               Tools.divi_simple: Tools.divi_abs,  # 同上
+                               Tools.mult_same: Tools.cond_2,  # 计算有意义区间相同，结果应该是相近的
+                               Tools.divi_same: Tools.cond_3,  # 同上
+                               }  # 这里只是随意打通一点，让“意外”发生，考虑不是太周全
+        
+        if func in cross_exchange_dict.keys():
+            if random.random < cross_refunc_pb:
+                new_func = cross_exchange_dict[func]
+
+        # 2. 同类互换。
 
         # 可互换的函数分类（没有重叠，函数不会同时处在不同分类。下方pb_each计算的基础）
         exchange_dict = {'comb': [Tools.comb_sum, Tools.comb_min,
@@ -720,22 +750,23 @@ class Tools(object):
                          'perm': [Tools.perm_add, Tools.perm_up, Tools.perm_sub, Tools.perm_down],
                          'trend': [Tools.sig_trend_strict, Tools.sig_trend_loose, Tools.sig_trend_start_end],
                          '0/1': [Tools.cond_1, Tools.mult_simple, Tools.divi_simple],  # same rules for args
-                         'mult': [Tools.mult_same, Tools.mult_abs, Tools.divi_same, Tools.divi_abs]
+                         'mult': [Tools.cond_2, Tools.mult_same, Tools.mult_abs, Tools.divi_same, Tools.divi_abs]
                          }
 
         for method_list in exchange_dict.values():
             if func in method_list:
+
                 method_list.remove(func)  # 每次都会重写exchange_dict，所以这里不用copy()
-
-                if random.random() < func_pb:
+                if random.random() < refunc_pb:
                     target_num = random.randint(0, len(method_list) - 1)  # 不能同时有多个变异项（不独立），所以用这种方法
-                    new_func = method_list[target_num] 
-                    node_data['node_function'] = new_func
+                    new_func = method_list[target_num]   # 如发生同类互换，会覆盖上方类型改变的结果。
 
-                    print('LV.3 function mutated.')
-                    return True
-
-        return False
+        if new_func:
+            node_data['node_function'] = new_func
+            print('LV.3 function mutated.')
+            return True     
+        else:
+            return False
 
     # LV.4-5 ----------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -760,7 +791,7 @@ class Tools(object):
     # LV.4 ------------------------------------------------------------------------------------------------------------
     @staticmethod
     def get_mapped_data(class_data, map_value_list):
-        """condition类别不需要经过这个函数"""
+        """condition、multiplier 类别不需要经过这个函数"""
 
         mapped_data = class_data.copy()
 
@@ -775,11 +806,10 @@ class Tools(object):
     @staticmethod
     def mutate_one_value_in_map(value, *, map_type='vector', jump_pb=0.1):
 
-        bracket = []
         new_value = value
 
         if map_type == 'vector':
-            bracket = [-1, 0, 1]  # value的值域
+            # bracket = [-1, 0, 1]  # value的值域
             if value == 0:
                 if random.random() < 0.5:
                     new_value = -1
@@ -794,16 +824,15 @@ class Tools(object):
                 else:
                     new_value = 0
 
-        elif map_type == 'cond' or map_type == 'condition':
-            bracket = [0, 1]
+        elif map_type == ('cond' or 'condition'):
+            # bracket = [0, 1]
             if value != 0:
                 new_value = 0
             else:
                 new_value = 1
 
-        if not bracket:
-            print('error 5687')
-            return value
+        elif map_type == ('multiplier' or 'mult'):
+            pass
 
         return new_value
 
@@ -830,6 +859,9 @@ class Tools(object):
         mutation_tag = False
         edge_list = node_data['class_args']  # 分类的切割点边界值 
         map_type = node_data['map_type']
+
+        if map_type == ('multiplier' or 'mult'):
+            return mutation_tag  # 增强类型的数据，不进行分类赋值
 
         mutable_list = node_data['class_args_mutable']
         edges_clean = Tools.check_full_in_list(True, mutable_list)
@@ -1423,43 +1455,84 @@ class Tools(object):
         for func in func_list:
 
             for mut_data in node_data['feature_args_range'][func]:
-                if mut_data and mut_data['sep']:
-                    mut_arg_num += 1
+                if mut_data:
+                    if isinstance(mut_data, dict) and mut_data['sep']:  # 对于dict类别定义的参数范围
+                        mut_arg_num += 1
+                    if isinstance(mut_data, list) and mut_data:  # 对于list类别定义的参数范围
+                        mut_arg_num += 1  # += len(mut_data) - 1  # --太极端了，改变类别的概率不应该大于改变参数的概率
 
         arg_mut_pb = Tools.probability_each(object_num=mut_arg_num, pb_for_all=refeature_pb)
 
         # 参数的变异
         feature_mut_flag = False
 
-        if arg_mut_pb:
-            for func in func_list:
+        if not arg_mut_pb:
+            return class_mut_flag, feature_mut_flag
 
-                args_list = node_data['feature_args'][func]
-                mut_data_list = node_data['feature_args_range'][func]
-                args_list_new = []
+        for func in func_list:
+            args_dict = node_data['feature_args'][func]  # 获得feature函数的 参数名-参数
+            mut_data_range = node_data['feature_args_range'][func]  # 获得feature函数的 参数名-变化范围
+            # args_dict_new = {}
 
-                index_num = 0
-                for arg, mut_data in zip(args_list, mut_data_list):
-                    if mut_data and random.random() < arg_mut_pb:
-                        start_value = mut_data['start']
-                        end_value = mut_data['end']
-                        sep_value = mut_data['sep']
-                        arg = Tools.mutate_value(arg, start_value=start_value, end_value=end_value, sep=sep_value)
+            for param_name in args_dict.keys():
+                if mut_data_range[param_name]:  # 可变异
 
-                    args_list_new.append(arg)
-                    index_num += 1
+                    now_param = args_dict[param_name]
+                    new_param = None
 
-                if args_list_new != args_list:
-                    node_data['feature_args'][func] = args_list_new.copy()
+                    if random.random() < arg_mut_pb:  # 概率允许
+                        choice_box = mut_data_range[param_name].copy()
 
-                    feature_mut_flag = True
-                    print('feature_args for %s value mutated.' % func)
+                        if isinstance(choice_box, dict):
+                            start_value = choice_box['start']
+                            end_value = choice_box['end']
+                            sep_value = choice_box['sep']
+                            new_param = Tools.mutate_value(now_param, start_value=start_value, end_value=end_value, sep=sep_value)
+                        
+                        if isinstance(choice_box, list):
+                            choice_box.remove(now_param)
+                            new_param = choice_box[random.randint(0, len(choice_box) - 1)]
+
+                    if new_param:
+                        node_data['feature_args'][func][param_name] = new_param
+                        feature_mut_flag = True
+                        print('feature_args for %s: %s value mutated.' % (func, param_name))
+
+            # index_num = 0
+            # for arg, mut_data in zip(args_dict, mut_data_range):
+            #     if mut_data and random.random() < arg_mut_pb:
+            #         start_value = mut_data['start']
+            #         end_value = mut_data['end']
+            #         sep_value = mut_data['sep']
+            #         arg = Tools.mutate_value(arg, start_value=start_value, end_value=end_value, sep=sep_value)
+
+            #     args_dict_new.append(arg)
+            #     index_num += 1
+
+            # if args_dict_new != args_dict:
+            #     node_data['feature_args'][func] = args_dict_new.copy()
+
+            #     feature_mut_flag = True
+            #     print('feature_args for %s value mutated.' % func)
 
         return class_mut_flag, feature_mut_flag
 
-    # 分类序列生成函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    # -----------------------------------------------------------------------------------------------------------------
+    # terminal 生成函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # ------------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def generate_leaf(num):
+        """terminal 生成函数"""
+        
+        leaf = {}
 
+    # ------------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def build_leaf(*args, node_type, node_func=None, class_func, edge_sep, zoom_long, zoom_short, edge_num=5,
+        leaf_kw, leaf_kw_sep, leaf_kw_func, ):
+
+        pass
+
+    # compare 分类序列生成 ----------------------------------------------------------------------------------------------
     @staticmethod
     def compare_distance(*sub_edge, feature1, feature2, window=0):
         """特征分类函数，差值对比，绝对距离（比大小：距离为0）  (缺点在于步长个性化太强，需要单独设置参数)
@@ -1488,8 +1561,7 @@ class Tools(object):
 
         return df_result['diff_tag'], class_index
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # compare 分类序列生成 ----------------------------------------------------------------------------------------------
     @staticmethod
     def compare_sigma(*sigma_edge, feature1, feature2, window=0):
         """特征分类函数，差值对比，平均标准差比例对比（比大小：比例为0）
@@ -1531,8 +1603,7 @@ class Tools(object):
 
         return df_result['diff_tag'], class_index
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # cut 分类序列生成 --------------------------------------------------------------------------------------------------
     @staticmethod
     def cut_number(*cut_points, feature, window=0):
         """特征分类函数，自切割，常量切割  (缺点在于步长个性化太强，需要单独设置参数)
@@ -1556,8 +1627,7 @@ class Tools(object):
 
         return df_result['cut'], class_index
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # cut 分类序列生成 --------------------------------------------------------------------------------------------------
     @staticmethod
     def cut_distance(*cut_points, feature, window=0):
         """特征分类函数，自切割，数值线性比例切割  (缺点在于不适应长尾，步长设置困难)
@@ -1595,8 +1665,7 @@ class Tools(object):
 
         return df_result['cut'], class_index
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # cut 分类序列生成 --------------------------------------------------------------------------------------------------
     @staticmethod
     def cut_rank(*cut_percents, feature, window=0):
         """特征分类函数，自切割，分布数量比例切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
@@ -1631,8 +1700,7 @@ class Tools(object):
 
         return df_result['cut'], class_index
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # cut 分类序列生成 --------------------------------------------------------------------------------------------------
     @staticmethod
     def cut_sigma(*cut_sigmas, feature, window=0):
         """特征分类函数，自切割，分布标准倍数切割  (缺点在于window长度，太短没有意义，太长初始化太慢，直接使用全部数据会有未来函数问题)
@@ -1680,17 +1748,23 @@ class Tools(object):
 
         return df_result['cut'], class_index
 
-    # 条件函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # branch 构造函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
-
     @staticmethod
-    def cond_1(*, cond, pos_should):
+    def generate_branc():
+        pass
+
+    # 条件函数 ----------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def cond_1(pos_should, cond):
         """CONDITION method: 0/1 condition
         ---在满足a(0/1)条件(1)的条件下，使用b的pos_should，其余0 【限2列】
 
         @param cond: condition to accept pos_should
         @param pos_should: pos_should signals Series (weighted)
         @return: pos_should signal
+
+        NOTE: 为了保持函数可互换性，遵照Tools.divi_simple的参数顺序
         """
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
@@ -1706,16 +1780,17 @@ class Tools(object):
 
         return df_sig['result_sig']
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 条件函数 ----------------------------------------------------------------------------------------------------------
     @staticmethod
-    def cond_2(*, cond, pos_should):
+    def cond_2(pos_should, cond):
         """CONDITION method: -1/0/1 condition
         ---在满足cond方向（正负，对比0）的条件下，pos_should如同方向（正负），使用其值，其余为0 【限2列】
 
         @param cond: condition to accept pos_should
         @param pos_should: pos_should signals Series (weighted)
         @return: pos_should signal
+
+        NOTE: 为了保持函数可互换性，遵循Tools.divi_same的参数顺序
         """
 
         df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
@@ -1727,9 +1802,7 @@ class Tools(object):
 
         return result_sig
 
-    # 增强、削弱函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 增强、削弱函数 -----------------------------------------------------------------------------------------------------
     @staticmethod
     def sigmoid(x, coefficient=2):
         """增幅限制函数"""
@@ -1737,8 +1810,7 @@ class Tools(object):
         s = coefficient / (1 + np.exp(-x / coefficient))
         return s * 2 - coefficient
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 增强、削弱函数 -----------------------------------------------------------------------------------------------------
     @staticmethod
     def mult_simple(vector_arr, abs_arr, coefficient=1.7):
         """增强函数：简单增强（简单相乘）。
@@ -1754,8 +1826,7 @@ class Tools(object):
 
         return df_mult['result'] * coefficient
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 增强、削弱函数 -----------------------------------------------------------------------------------------------------
     @staticmethod
     def mult_same(arr1, arr2, coefficient=1.7):
         """增强函数：同向增强  --同方向时：保留符号，计算相乘结果；其他：0 """
@@ -1779,8 +1850,7 @@ class Tools(object):
 
         return df_mult['result'] * coefficient
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 增强、削弱函数 -----------------------------------------------------------------------------------------------------
     @staticmethod
     def mult_abs(main_arr, affect_arr, coefficient=1.7):
         """增强函数：绝对增强  --主sig和副sig的绝对值相乘，改变主sig的幅度，不改变方向。"""
@@ -1796,8 +1866,7 @@ class Tools(object):
 
         return df_mult['result'] * coefficient
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 增强、削弱函数 -----------------------------------------------------------------------------------------------------
     @staticmethod
     def divi_simple(vector_arr, abs_arr, coefficient=1.5):
         """削弱函数：简单削弱（简单相除）， 且尽可能不超过dividend。
@@ -1817,8 +1886,7 @@ class Tools(object):
 
         return df_mult['result'] * coefficient
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 增强、削弱函数 -----------------------------------------------------------------------------------------------------
     @staticmethod
     def divi_same(dividend, divisor, coefficient=1.5):
         """削弱函数：同向削弱  --同方向时：保留符号，计算相除结果，且尽可能不超过dividend；其他：0 """
@@ -1844,8 +1912,7 @@ class Tools(object):
 
         return df_mult['result'] * coefficient
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 增强、削弱函数 -----------------------------------------------------------------------------------------------------
     @staticmethod
     def divi_abs(main_arr, affect_arr, coefficient=1.5):
         """削弱函数：绝对削弱  --主sig处以副sig的绝对值，改变主sig的幅度，不改变方向。且尽可能不超过主sig。
@@ -1865,9 +1932,7 @@ class Tools(object):
 
         return df_mult['result'] * coefficient
 
-    # 合并 pos_should 信号的相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 ------------------------------------------------------------------------------------------------------
     @staticmethod
     def sig_merge(*signals):
         """Merge signals(pos_should) Series into a DataFrame
@@ -1893,22 +1958,45 @@ class Tools(object):
 
         return df_sig
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 ------------------------------------------------------------------------------------------------------
     @staticmethod
-    def sig_weight(*, signal, weight):
-        """Return a weighted pos_should signal Series.
+    def sig_delta(*signals):
+        """Compare each Series line by line
 
-        @param signal: a signal Series
-            index: timestamp
-            value: pos_should signal
-        @param weight: weight of the signal
-        @return: weighted pos_should signal Series
+        @param signals: Series
+        @return: DataFrame
+
+        note: old function name: sig_trend
         """
 
-        return signal * weight
+        df_sig = Tools.sig_merge(*signals)
 
-    # ----------------------------------------------------------------------------------------------------------------
+        column_num = len(df_sig.columns)
+        num = 0
+        df_trend = pd.DataFrame()  # if len(signals) < 2: return an empty df
+
+        while num < column_num - 1:
+            df_trend[num] = df_sig.iloc[:, num + 1] - df_sig.iloc[:, num]
+            num += 1
+
+        return df_trend
+
+    # 多项合并函数 ------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def df_to_series(df):
+        """Turn a pd.DataFrame into a tuple containing all the Series."""
+
+        list_series = []
+        column_num = len(df.columns)
+        num = 0
+
+        while num < column_num:
+            list_series.append(df.iloc[:, num])
+            num += 1
+
+        return tuple(list_series)
+
+    # 多项合并函数 ------------------------------------------------------------------------------------------------------
     @staticmethod
     def sig_to_one(method, *signals):
         """分流函数
@@ -1955,8 +2043,7 @@ class Tools(object):
             print('No method assigned in staticmethod sig_to_one()')
             return pd.DataFrame()
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
     def comb_sum(*signals):
         """Pos_should signal merge method: comb_sum  
@@ -1967,13 +2054,11 @@ class Tools(object):
         """
 
         df_sig = Tools.sig_merge(*signals)
-
         result_sig = df_sig.sum(axis=1)
 
         return result_sig
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
     def comb_vote0(*signals):
         """引用各列signal，按-1,0,1赋值（消除weight和小数点）再加和，输出为：-1/0/1"""
@@ -1986,8 +2071,7 @@ class Tools(object):
 
         return df_sig.sum(axis=1)
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
     def comb_vote1(*signals):
         """Pos_should signal merge method: comb_vote1  
@@ -2008,8 +2092,7 @@ class Tools(object):
 
         return df_result['result_sig']
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
     def comb_vote2(*signals):
         """Pos_should signal merge method: comb_vote2  
@@ -2032,8 +2115,7 @@ class Tools(object):
 
         return df_result['result_sig']
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
     def comb_vote3(*signals):
         """Pos_should signal merge method: comb_vote3  
@@ -2056,8 +2138,7 @@ class Tools(object):
 
         return df_result['result_sig']
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
     def comb_min(*signals):
         """Pos_should signal merge method: comb_min
@@ -2080,48 +2161,7 @@ class Tools(object):
 
         return df_result['result_sig']
 
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def sig_delta(*signals):
-        """Compare each Series line by line
-
-        @param signals: Series
-        @return: DataFrame
-
-        note: old function name: sig_trend
-        """
-
-        df_sig = Tools.sig_merge(*signals)
-
-        column_num = len(df_sig.columns)
-        num = 0
-        df_trend = pd.DataFrame()  # if len(signals) < 2: return an empty df
-
-        while num < column_num - 1:
-            df_trend[num] = df_sig.iloc[:, num + 1] - df_sig.iloc[:, num]
-            num += 1
-
-        return df_trend
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @staticmethod
-    def df_to_series(df):
-        """Turn a pd.DataFrame into a tuple containing all the Series."""
-
-        list_series = []
-        column_num = len(df.columns)
-        num = 0
-
-        while num < column_num:
-            list_series.append(df.iloc[:, num])
-            num += 1
-
-        return tuple(list_series)
-
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 trend ------------------------------------------------------------------------------------------------
     @staticmethod
     def sig_trend_loose(*signals):
         """判断指标的趋势：一个比一个大：1, 一个比一个小：-1, 不一定：0
@@ -2147,8 +2187,7 @@ class Tools(object):
 
         return trend
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 trend ------------------------------------------------------------------------------------------------
     @staticmethod
     def sig_trend_strict(*signals):
         """Check each df line to see if values (in each signal) goes straight or not
@@ -2174,8 +2213,7 @@ class Tools(object):
 
         return df_sig['result_sig']
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 trend ------------------------------------------------------------------------------------------------
     @staticmethod
     def sig_trend_start_end(*signals):
         """Check each df line to see if values (in each signal) eventually(start vs. end) goes up/down
@@ -2210,8 +2248,7 @@ class Tools(object):
 
         return result_sig
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 permutation ------------------------------------------------------------------------------------------
     @staticmethod
     def perm_add(*signals):
         """Pos_should signal merge method: permutation addition
@@ -2230,8 +2267,7 @@ class Tools(object):
 
         return df_sig['result_sig']
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 permutation ------------------------------------------------------------------------------------------
     @staticmethod
     def perm_sub(*signals):
         """Pos_should signal merge method: permutation subtract
@@ -2250,8 +2286,7 @@ class Tools(object):
 
         return df_sig['result_sig']
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 permutation ------------------------------------------------------------------------------------------
     @staticmethod
     def perm_up(*signals):
         """Pos_should signal merge method: permutation go up
@@ -2270,8 +2305,7 @@ class Tools(object):
 
         return df_sig['result_sig']
 
-    # -----------------------------------------------------------------------------------------------------------------
-
+    # 多项合并函数 permutation ------------------------------------------------------------------------------------------
     @staticmethod
     def perm_down(*signals):
         """Pos_should signal merge method: permutation go up
