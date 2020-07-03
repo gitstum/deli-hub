@@ -127,6 +127,7 @@ class Method(Enum):
 
     # signal 组合求解
     COMBINATION = ['comb_sum',  # 对各列signal进行加和，含小数
+                   'comb_vote0',  # 引用各列signal，按-1,0,1赋值（消除weight和小数点）再加和，输出为：-1/0/1
                    'comb_vote1',  # 使用各列signal投票，加和，输出为：-1/0/1
                    'comb_vote2',  # 使用各列signal投票，须无反对票，输出为：-1/0/1
                    'comb_vote3',  # 使用各列signal投票，须全票通过，输出为：-1/0/1
