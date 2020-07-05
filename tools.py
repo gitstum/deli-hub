@@ -101,14 +101,14 @@ class Tools(object):
 
         if modify:
 
-            if type(min_range) == type(0.1):
+            if isinstance(min_range, float):
                 # 避免小数点后太长
                 float_num = len(str(min_range).split('.')[1])
                 result = Tools.shorten_float(result, float_num)
 
             else:
                 # 整数进，整数出
-                result = round(result)
+                result = int(round(result))
 
         return result
 
@@ -414,15 +414,18 @@ class Tools(object):
             return value  # 暂不支持其他类别变异
 
         if sep is None:
-            sep = value / 20
             # 20：主观设定，按 5% 自动计算步长。
-            # 整数value的自动步长，要求value不能低于11，否则将sep将为0，无法逆转
+            # 整数value的自动步长，要求value不能低于11，否则将sep将为0，无法逆转 [已解决]
             # 最大的缺点在于，对于数值大的value，sep也大，因此很难长期保持 --整体使得value的变异有变小的倾向
-            if type(value) == type(1):
-                sep = round(sep)
-            else:
+            sep = value / 20
+            if isinstance(value, float):
                 float_num = len(str(value).split('.')[1]) + 1
                 sep = Tools.shorten_float(sep, float_num)
+            else:
+                if value >= 20:
+                    sep = int(round(sep))
+                else:
+                    sep = 1            
 
         if sep == 0:
             return value
@@ -449,6 +452,10 @@ class Tools(object):
             new_value = start_value
         if end_value and new_value > end_value:
             new_value = end_value
+
+        # # 类型检验  --fit_to_minimal里面已经处理过了
+        # if isinstance(value, int) or isinstance(sep, int):
+        #     new_value = round(new_value)
 
         return new_value
 
@@ -1444,7 +1451,7 @@ class Tools(object):
             if type(value) == type(Tools.agg_cal):
                 func_list.append(value)
 
-                # 计算每个参数的变异概率
+        # 计算每个参数的变异概率
         mut_arg_num = 0
         for func in func_list:
 
