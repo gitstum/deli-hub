@@ -12,9 +12,7 @@ import multiprocessing as mp
 from backtest.constant import *
 
 
-
 class Tools(object):
-
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -350,15 +348,11 @@ class Tools(object):
 
     # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def get_id(id_type='node'):
+    def get_id(id_start='node'):
         """获取唯一ID：节点，分类器"""
 
-        if id_type == 'node':
-            new_ID = 'node_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
-        elif id_type == 'classifier':
-            new_ID = 'class_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
-
-        return
+        ID = id_start + '_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
+        return ID
 
         # LV.0 ------------------------------------------------------------------------------------------------------------
 
@@ -3267,11 +3261,11 @@ class Tools(object):
         2. Results be so bad as to cause calculation issue.
         """
 
-        dict_score = {'Sortino_ratio': -888,
-                      'Calmar_ratio': -888,
-                      'Annual_return': -888,
-                      'Max_drawdown': -888,
-                      'Sharpe_ratio': -888,
+        dict_score = {'Sortino_ratio': -888.88,
+                      'Calmar_ratio': -888.88,
+                      'Annual_return': -888.88,
+                      'Max_drawdown': -888.88,
+                      'Sharpe_ratio': -888.88,
                       '年化交易次数': 0,
                       '年化成交量': 0,
                       '持仓时间比': 0,
