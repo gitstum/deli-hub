@@ -15,13 +15,25 @@ from backtest.constant import *
 from tools import Tools
 
 
-class Form(Tools):
-    """From strategy detail to df_book
+class Decision(Tools):
+    """From each strategy outcome to df_book
     1. Create the big strategy demand DataFrame. Index: timestamp, columns:
         - strategy_IDs
         - each strategy demands: pos_should, price(None for marketprice)
     2. Merge all strategy demands into one df_book.
     """
+
+
+    def __init__(self, name, structure, data):
+
+        self.name = name
+
+
+
+    def make_decision(self):
+
+        pass
+
 
 
 
