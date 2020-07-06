@@ -482,11 +482,12 @@ class Tools(object):
             if isinstance(value, pd.Series):
                 node['class_kw'][kw] = 'stripped'
 
+        # TODO: update
         # 源数据
-        for func, kwargs in node['feature_args'].items():
-            for param_name, value in kwargs.items():
-                if isinstance(value, pd.DataFrame):
-                    node['feature_args'][func][param_name] = 'stripped'  # 源数据只有一个：df
+        # for func, kwargs in node['feature_args'].items():
+        #     for param_name, value in kwargs.items():
+        #         if isinstance(value, pd.DataFrame):
+        #             node['feature_args'][func][param_name] = 'stripped'  # 源数据只有一个：df
 
         node['node_stripped'] = True
 
@@ -502,11 +503,13 @@ class Tools(object):
                 if name == 'df_source':
                     node['feature_args'][func][name] = df  # 添加源数据
 
-        for key, value in node['class_kw']:
-            if value == 'stripped':
-                func = node['class_kw_func'][key]
-                feature = func(**node['feature_args'][func])
-                node['class_kw'][key] = feature  # 还原feature数据
+
+        # TODO: update
+        # for key, value in node['class_kw']:
+        #     if value == 'stripped':
+        #         func = node['class_kw_func'][key]
+        #         feature = func(**node['feature_args'][func])
+        #         node['class_kw'][key] = feature  # 还原feature数据
 
         # LV.5 计算分类
         class_function = node['class_func']
@@ -1443,78 +1446,64 @@ class Tools(object):
                     print('class_kw: "%s" value mutated.' % key)
 
         # 2. mutate feature
-        # TODO finish
 
-        # 提取feature计算函数
-        func_list = []
-        for value in node_data['class_kw_func'].values():
-            if type(value) == type(Tools.agg_cal):
-                func_list.append(value)
+        for name, instance in 
 
-        # 计算每个参数的变异概率
-        mut_arg_num = 0
-        for func in func_list:
+        # 字典结构的旧方法
 
-            for mut_data in node_data['feature_args_range'][func]:
-                if mut_data:
-                    if isinstance(mut_data, dict) and mut_data['sep']:  # 对于dict类别定义的参数范围
-                        mut_arg_num += 1
-                    if isinstance(mut_data, list) and mut_data:  # 对于list类别定义的参数范围
-                        mut_arg_num += 1  # += len(mut_data) - 1  # --太极端了，改变类别的概率不应该大于改变参数的概率
+        # # 提取feature计算函数
+        # func_list = []
+        # for value in node_data['class_kw_func'].values():
+        #     if type(value) == type(Tools.agg_cal):
+        #         func_list.append(value)
 
-        arg_mut_pb = Tools.probability_each(object_num=mut_arg_num, pb_for_all=refeature_pb)
+        # # 计算每个参数的变异概率
+        # mut_arg_num = 0
+        # for func in func_list:
 
-        # 参数的变异
-        feature_mut_flag = False
+        #     for mut_data in node_data['feature_args_range'][func]:
+        #         if mut_data:
+        #             if isinstance(mut_data, dict) and mut_data['sep']:  # 对于dict类别定义的参数范围
+        #                 mut_arg_num += 1
+        #             if isinstance(mut_data, list) and mut_data:  # 对于list类别定义的参数范围
+        #                 mut_arg_num += 1  # += len(mut_data) - 1  # --太极端了，改变类别的概率不应该大于改变参数的概率
 
-        if not arg_mut_pb:
-            return class_mut_flag, feature_mut_flag
+        # arg_mut_pb = Tools.probability_each(object_num=mut_arg_num, pb_for_all=refeature_pb)
 
-        for func in func_list:
-            args_dict = node_data['feature_args'][func]  # 获得feature函数的 参数名-参数
-            mut_data_range = node_data['feature_args_range'][func]  # 获得feature函数的 参数名-变化范围
-            # args_dict_new = {}
+        # # 参数的变异
+        # feature_mut_flag = False
 
-            for param_name in args_dict.keys():
-                if mut_data_range[param_name]:  # 可变异
+        # if not arg_mut_pb:
+        #     return class_mut_flag, feature_mut_flag
 
-                    now_param = args_dict[param_name]
-                    new_param = None
+        # for func in func_list:
+        #     args_dict = node_data['feature_args'][func]  # 获得feature函数的 参数名-参数
+        #     mut_data_range = node_data['feature_args_range'][func]  # 获得feature函数的 参数名-变化范围
+        #     # args_dict_new = {}
 
-                    if random.random() < arg_mut_pb:  # 概率允许
-                        choice_box = mut_data_range[param_name].copy()
+        #     for param_name in args_dict.keys():
+        #         if mut_data_range[param_name]:  # 可变异
 
-                        if isinstance(choice_box, dict):
-                            start_value = choice_box['start']
-                            end_value = choice_box['end']
-                            sep_value = choice_box['sep']
-                            new_param = Tools.mutate_value(now_param, start_value=start_value, end_value=end_value, sep=sep_value)
+        #             now_param = args_dict[param_name]
+        #             new_param = None
+
+        #             if random.random() < arg_mut_pb:  # 概率允许
+        #                 choice_box = mut_data_range[param_name].copy()
+
+        #                 if isinstance(choice_box, dict):
+        #                     start_value = choice_box['start']
+        #                     end_value = choice_box['end']
+        #                     sep_value = choice_box['sep']
+        #                     new_param = Tools.mutate_value(now_param, start_value=start_value, end_value=end_value, sep=sep_value)
                         
-                        if isinstance(choice_box, list):
-                            choice_box.remove(now_param)
-                            new_param = choice_box[random.randint(0, len(choice_box) - 1)]
+        #                 if isinstance(choice_box, list):
+        #                     choice_box.remove(now_param)
+        #                     new_param = choice_box[random.randint(0, len(choice_box) - 1)]
 
-                    if new_param:
-                        node_data['feature_args'][func][param_name] = new_param
-                        feature_mut_flag = True
-                        print('feature_args for %s: %s value mutated.' % (func, param_name))
-
-            # index_num = 0
-            # for arg, mut_data in zip(args_dict, mut_data_range):
-            #     if mut_data and random.random() < arg_mut_pb:
-            #         start_value = mut_data['start']
-            #         end_value = mut_data['end']
-            #         sep_value = mut_data['sep']
-            #         arg = Tools.mutate_value(arg, start_value=start_value, end_value=end_value, sep=sep_value)
-
-            #     args_dict_new.append(arg)
-            #     index_num += 1
-
-            # if args_dict_new != args_dict:
-            #     node_data['feature_args'][func] = args_dict_new.copy()
-
-            #     feature_mut_flag = True
-            #     print('feature_args for %s value mutated.' % func)
+        #             if new_param:
+        #                 node_data['feature_args'][func][param_name] = new_param
+        #                 feature_mut_flag = True
+        #                 print('feature_args for %s: %s value mutated.' % (func, param_name))
 
         return class_mut_flag, feature_mut_flag
 
