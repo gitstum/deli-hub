@@ -25,6 +25,8 @@ class Hello(object):
 class Indicator(Tools):
 
     name = 'Indicator'
+    result = pd.Series() 
+    map_value_type = ['vector', 'condition', 'multiplier']
 
     default_range = dict(df_source=None,
                          column_name=['price_end'],  # 字符类型：list表示，提供参数的变异选项
@@ -35,18 +37,14 @@ class Indicator(Tools):
     score_num = 0
     avg_score = 0
 
-    data = pd.Series() 
 
-    def __init__(self, *, df_source, name=None, arg_range=None, refeature_pb=0.07):
 
+    def __init__(self, *, df_source, arg_range=None, refeature_pb=0.07):
+
+        self.name = self.get_id(self.name)  # feature_ID
         self.result = pd.Series()   # indicator 计算出来的data 储存在这里
 
         self.df_source = df_source  # data_source. must have.
-
-        if name:
-            self.name = name
-        else:
-            self.name = self.get_id(self.name)  # feature_ID
 
         if not arg_range:
             arg_range = self.default_range
@@ -91,7 +89,6 @@ class Indicator(Tools):
         """计算每个参数的变异概率"""
 
         mut_arg_num = 0
-
         for value in self.arg_range.values():
             if isinstance(value, dict) and value['sep']:
                 mut_arg_num += 1
@@ -122,6 +119,19 @@ class Indicator(Tools):
 
     def get_avg_score(self):
         return self.avg_score  # 获取分数统计信息
+
+    @staticmethod
+    def get_indicator_mutable_dimension_num(arg_range):
+        """indicator中可变异的参数的维度（根据columns数量决定）。"""
+
+        num = 0
+        for value in arg_range.values():
+            if isinstance(value, dict) and value['sep']:
+                num += 1
+            if isinstance(value, list):
+                num += len(value) - 1
+
+        return num
 
     # ------------------------------------------------------------------------------------------------------------------
 
@@ -217,6 +227,9 @@ class MA(Indicator):
     """template"""
 
     name = 'simple moving average'   # change indicator name
+    result = pd.Series()  # indicator 计算出来的data
+    map_value_type = ['vector', 'condition', 'multiplier']  # 本计算方式所的结果适应的分类方式
+
     default_range = dict(df_source=None,
                          column_name=['price_end', 'price_start'],
                          window={'start': 5, 'end': 400, 'sep': True}
@@ -224,8 +237,6 @@ class MA(Indicator):
     score_list = []
     score_num = 0
     avg_score = 0
-
-    result = pd.Series()  # indicator 计算出来的data
 
     def add_score(self, score):
 
