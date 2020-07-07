@@ -9,7 +9,7 @@ import empyrical
 
 import multiprocessing as mp
 
-from backtest.constant import *
+from constant import *
 
 
 class Tools(object):
@@ -354,8 +354,7 @@ class Tools(object):
         ID = id_start + '_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
         return ID
 
-        # LV.0 ------------------------------------------------------------------------------------------------------------
-
+    # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
     def get_node_name(node_map, node_mother_name):
         """新添加node时，获取node名称（如'ACB')
@@ -465,7 +464,7 @@ class Tools(object):
         """将某一节点的大数据剔除，节约存储。inplace"""
 
         # node结果数据
-        node['node_data'] = 'stripped'
+        node['node_result'] = 'stripped'
 
         if not node['terminal']:
             # 加权前数据 --无
@@ -521,7 +520,7 @@ class Tools(object):
         # LV.3 --无
 
         # LV.2 赋予权重，获得节点数据
-        node['node_data'] = mapped_data * node['weight']  # 还原结果数据
+        node['node_result'] = mapped_data * node['weight']  # 还原结果数据
 
     # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -539,11 +538,11 @@ class Tools(object):
 
         args = []
         for child in child_names:
-            args.append(node_map[child]['node_data'])
+            args.append(node_map[child]['node_result'])
 
         # 计算节点数据
         node_function = node['node_function']
-        node['node_data'] = node_function(*args) * node['weight']
+        node['node_result'] = node_function(*args) * node['weight']
 
     # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -589,7 +588,7 @@ class Tools(object):
 
         root_args = []
         for name in deputy_list:
-            root_args.append(node_map[name]['node_data'])
+            root_args.append(node_map[name]['node_result'])
 
         pos_should_alpha = root_function(*root_args)
 
@@ -1447,7 +1446,7 @@ class Tools(object):
 
         # 2. mutate feature
 
-        for name, instance in 
+        
 
         # 字典结构的旧方法
 
