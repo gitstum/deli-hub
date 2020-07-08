@@ -439,12 +439,18 @@ class Tools(object):
         # 如value未变化，循环操作促使改变
         num = 0
         while new_value == value:
+
+            if num > 30:
+                if random.random() < 0.5:
+                    new_value = value - sep
+                else:
+                    new_value = value + sep
+                break  # 避免过度，浪费计算资源
+
             delta = np.random.randn() * sep * mul * end_flut_mul
             new_value = Tools.fit_to_minimal(value + delta, min_range=sep)
             num += 1
-            if num > 30:
-                print('over 30.')
-                break  # 避免过度，浪费计算资源
+
 
         # 范围检验
         if start_value and new_value < start_value:
