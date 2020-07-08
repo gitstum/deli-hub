@@ -7,13 +7,17 @@ import pandas as pd
 
 from tools import Tools
 
-from features.indicator import Indicator
+from indicator import Indicator
 
 
 # ======================================================================================================================
 
 class MA(Indicator):
+
     name = 'simple moving average'
+    result = pd.Series()  # indicator 计算出来的data
+    map_type = ['vector', 'condition']  # 本计算方式所的结果适应的分类方式
+
     default_range = dict(df_source=None,
                          column_name=['price_end', 'price_start'],
                          window={'start': 5, 'end': 400, 'sep': True}
@@ -21,8 +25,6 @@ class MA(Indicator):
     score_list = []
     score_num = 0
     avg_score = 0
-
-    data = pd.Series()  # indicator 计算出来的data
 
     def add_score(self, score):
 
@@ -58,16 +60,18 @@ class MA(Indicator):
 # ======================================================================================================================
 
 class WEMA(Indicator):
+
     name = 'exponential weighted moving average'
+    result = pd.Series()  # indicator 计算出来的data
+    map_type = ['vector', 'condition']  # 本计算方式所的结果适应的分类方式
+
     default_range = dict(df_source=None,
-                         column_name=['price_end', 'price_start'],
+                         column_name=['price_end', 'price_start'] ,
                          com={'start': 1.0, 'end': 400.0, 'sep': True}  # pd.ewm的com非常适合True自动变异
                          )
     score_list = []
     score_num = 0
     avg_score = 0
-
-    data = pd.Series()
 
     def add_score(self, score):
 
@@ -106,16 +110,16 @@ class WEMA(Indicator):
 class MovingSTD(Indicator):
 
     name = 'moving standard deviation'
+    result = pd.Series()  # indicator 计算出来的data
+    map_type = ['condition', 'multiplier']  # 本计算方式所的结果适应的分类方式
 
     default_range = dict(df_source=None,
-                         column_name=['price_end', 'price_avg'],
+                         column_name=['price_end'],
                          window={'start': 5, 'end': 400, 'sep': True}
                          )
     score_list = []
     score_num = 0
     avg_score = 0
-
-    data = pd.Series()
 
     def add_score(self, score):
 
@@ -241,9 +245,13 @@ if __name__ == '__main__':
 
     df = pd.read_csv('../data/bitmex_price_1hour_2020q1.csv')
 
+    d = {}
+
     test = MA(df_source=df, refeature_pb=0.5)
     test2 = WEMA(df_source=df, refeature_pb=0.5)
     test3 = WEMA(df_source=df, refeature_pb=0.5)
+
+    d['ins'] = test3
 
     print(test.name)
     print(test2.name)
@@ -252,6 +260,9 @@ if __name__ == '__main__':
     test.random_start()
     test2.random_start()
     test3.random_start()
+
+    d['result'] = test3.result
+    d['node_score'] = []
 
     n = 0
     while n < 10:
@@ -273,13 +284,16 @@ if __name__ == '__main__':
         test2.add_score(score2)
         test3.add_score(score3)
 
+        d['node_score'].append(score3)
+
         test.update_score(score1)
         test2.update_score(score2)
         test3.update_score(score3)
 
         change_flag = test3.mutate_args(refeature_pb=0.8)
         if change_flag:
-            result = test3.cal()
+            d['result'] = test3.cal()  # 要重新指向，不会自动更新到dict中～
+
 
         n += 1
         time.sleep(0.2)
