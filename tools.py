@@ -512,7 +512,7 @@ class Tools(object):
 
         # LV.5 计算分类
         class_function = node['class_func']
-        node['class_data'] = class_function(*node['class_args'], **node['class_kw'])  # 还原分类数据
+        node['class_data'] = class_function(*node['class_args_edges'], **node['class_kw'])  # 还原分类数据
 
         # LV.4 计算赋值
         mapped_data = Tools.get_mapped_data(node['class_data'], node['map_value_list'])
@@ -782,11 +782,11 @@ class Tools(object):
             node_data['map_value_list'] = new_mapping_list.copy()
             updated = True
 
-        if new_edge_list and new_edge_list != node_data['class_args']:
+        if new_edge_list and new_edge_list != node_data['class_args_edges']:
             new_edge_list.sort()  # 记得要排序一下！
-            node_data['class_args'] = new_edge_list.copy()
+            node_data['class_args_edges'] = new_edge_list.copy()
             if new_mutable_list:
-                node_data['class_args_mutable'] = new_mutable_list.copy()  # 跟随'class_args'， 一一对应
+                node_data['class_args_mutable'] = new_mutable_list.copy()  # 跟随'class_args_edges'， 一一对应
             updated = True
 
         return updated
@@ -847,20 +847,20 @@ class Tools(object):
         @param node_data: dict of the node in node_map, include:
             - 'map_value_list': the LIST to get mutated.
             - 'map_type': to direct the mutation.
-            - 'class_args': to be changed if any mutation happened on mapping_list.
+            - 'class_args_edges': to be changed if any mutation happened on mapping_list.
         @param revalue_pb: probability of any  mutation happened.
         @param jump_pb:
         @param merge_pb: probability of merging 2(or more) same value into 1 value.
-        @param cut_pb: probability of cutting 1 value into 2. ('class_args' cut at random distance)
+        @param cut_pb: probability of cutting 1 value into 2. ('class_args_edges' cut at random distance)
         @param clear_pb: probability of deleting the value between 2 same value.
         @param smooth_pb: probability of adding a 0 value betweent -1 & 1 (for 'vector' map_type only)
         @return: True for any mutation happened for mapping_list(and classify_args)
 
-        NOTE: inplace. all pb are independent. Error if node_data['class_args'] contains other than edges.
+        NOTE: inplace. all pb are independent. Error if node_data['class_args_edges'] contains other than edges.
         """
 
         mutation_tag = False
-        edge_list = node_data['class_args']  # 分类的切割点边界值 
+        edge_list = node_data['class_args_edges']  # 分类的切割点边界值 
         map_type = node_data['map_type']
 
         if map_type == ('multiplier' or 'mult'):
@@ -947,13 +947,13 @@ class Tools(object):
         注：这个功能在LV.5 中有重复，且更科学（所以这里的概率设置低一些）
         """
 
-        edge_list_new = node_data['class_args'].copy()
+        edge_list_new = node_data['class_args_edges'].copy()
         if not edge_list_new:
             return False  # 缺乏切割的参考edge值，会导致出错。
 
         mapping_list_new = node_data['map_value_list'].copy()
-        zoom_of_sep = node_data['class_edge_sep']
-        zoom_short_edge = node_data['class_zoom_short']
+        zoom_of_sep = node_data['edge_mut_range']['sep']
+        zoom_short_edge = node_data['edge_mut_range']['too_short']
         zoom_at_border = zoom_short_edge * add_zoom_mul  # 如新增在两端，用此确定切割的edge值
         if zoom_short_edge < zoom_of_sep * 3:
             zoom_short_edge = zoom_of_sep * 3  # 切割两端都需要至少（可等于）保留一个sep，故3
@@ -1013,8 +1013,8 @@ class Tools(object):
         """
 
         mapping_list_new = node_data['map_value_list'].copy()
-        edge_list_new = node_data['class_args'].copy()
-        zoom_of_sep = node_data['class_edge_sep']
+        edge_list_new = node_data['class_args_edges'].copy()
+        zoom_of_sep = node_data['edge_mut_range']['sep']
 
         clear_order_list = []
         last_value_1 = None  # last value in mapping_list
@@ -1073,11 +1073,11 @@ class Tools(object):
         """
 
         mapping_list_new = node_data['map_value_list'].copy()
-        edge_list_new = node_data['class_args'].copy()
+        edge_list_new = node_data['class_args_edges'].copy()
 
         # 这里的做法是，预先设定zoom值（固定），插入。后期可考虑动态调整zoom值(要考虑前后边界的情况：缺失、太窄等)
-        add_zoom = node_data['class_zoom_short'] * smooth_zoom_mul
-        zoom_of_sep = node_data['class_edge_sep']
+        add_zoom = node_data['edge_mut_range']['too_short'] * smooth_zoom_mul
+        zoom_of_sep = node_data['edge_mut_range']['sep']
 
         add_tag_list = []
         last_value_1 = None  # last value in mapping_list
@@ -1133,7 +1133,7 @@ class Tools(object):
         """mapping_list 连续同值合并【优化】"""
 
         mapping_list_new = node_data['map_value_list'].copy()
-        edge_list_new = node_data['class_args'].copy()
+        edge_list_new = node_data['class_args_edges'].copy()
 
         merge_tag_list = []
         last_value_1 = None  # last value in mapping_list
@@ -1251,11 +1251,11 @@ class Tools(object):
     def mutate_edge_move(node_data, *, move_pb):
         """切割边界变异：移动边界"""
 
-        edge_list = node_data['class_args']
+        edge_list = node_data['class_args_edges']
         edge_list_new = []  # 这里的写法与 mutate_mapping_list_* 中的不同，考虑到部分参数不是edge的情况，更严谨
         mutable_list = node_data['class_args_mutable']  # 需引用，但没有更新变化
         not_mutable_tag = []
-        zoom_of_sep = node_data['class_edge_sep']
+        zoom_of_sep = node_data['edge_mut_range']['sep']
 
         mutable_num = 0
         for i in mutable_list:
@@ -1293,14 +1293,14 @@ class Tools(object):
     def mutate_edge_insert(node_data, *, insert_pb, add_zoom_mul=1.5):
         """切割边界变异：太远了，插入"""
 
-        edge_list = node_data['class_args']
-        edge_list_new = node_data['class_args'].copy()
+        edge_list = node_data['class_args_edges']
+        edge_list_new = node_data['class_args_edges'].copy()
         mapping_list = node_data['map_value_list']
         mapping_list_new = node_data['map_value_list'].copy()
 
-        long_edge = node_data['class_zoom_long']
-        zoom_distance_edge = node_data['class_zoom_short'] * add_zoom_mul
-        zoom_of_sep = node_data['class_edge_sep']
+        long_edge = node_data['edge_mut_range']['too_long']
+        zoom_distance_edge = node_data['edge_mut_range']['too_short'] * add_zoom_mul
+        zoom_of_sep = node_data['edge_mut_range']['sep']
         map_type = node_data['map_type']
 
         long_tag_list = []
@@ -1361,12 +1361,12 @@ class Tools(object):
     def mutate_edge_pop(node_data, *, pop_pb):
         """切割边界变异：太近了，删除"""
 
-        edge_list = node_data['class_args']
-        edge_list_new = node_data['class_args'].copy()
+        edge_list = node_data['class_args_edges']
+        edge_list_new = node_data['class_args_edges'].copy()
         mapping_list = node_data['map_value_list']
         mapping_list_new = node_data['map_value_list'].copy()
 
-        short_edge = node_data['class_zoom_short']
+        short_edge = node_data['edge_mut_range']['too_short']
 
         short_tag_list = []
         old_edge = None
