@@ -9,7 +9,7 @@ import empyrical
 
 import multiprocessing as mp
 
-from backtest.constant import *
+from constant import *
 
 
 class Tools(object):
@@ -354,8 +354,7 @@ class Tools(object):
         ID = id_start + '_' + str(int(time.time() * 10 ** 6)) + '_' + str(int(random.randint(100000, 999999)))
         return ID
 
-        # LV.0 ------------------------------------------------------------------------------------------------------------
-
+    # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
     def get_node_name(node_map, node_mother_name):
         """新添加node时，获取node名称（如'ACB')
@@ -440,12 +439,18 @@ class Tools(object):
         # 如value未变化，循环操作促使改变
         num = 0
         while new_value == value:
+
+            if num > 30:
+                if random.random() < 0.5:
+                    new_value = value - sep
+                else:
+                    new_value = value + sep
+                break  # 避免过度，浪费计算资源
+
             delta = np.random.randn() * sep * mul * end_flut_mul
             new_value = Tools.fit_to_minimal(value + delta, min_range=sep)
             num += 1
-            if num > 30:
-                print('over 30.')
-                break  # 避免过度，浪费计算资源
+
 
         # 范围检验
         if start_value and new_value < start_value:
@@ -465,7 +470,7 @@ class Tools(object):
         """将某一节点的大数据剔除，节约存储。inplace"""
 
         # node结果数据
-        node['node_data'] = 'stripped'
+        node['node_result'] = 'stripped'
 
         if not node['terminal']:
             # 加权前数据 --无
@@ -482,11 +487,12 @@ class Tools(object):
             if isinstance(value, pd.Series):
                 node['class_kw'][kw] = 'stripped'
 
+        # TODO: update
         # 源数据
-        for func, kwargs in node['feature_args'].items():
-            for param_name, value in kwargs.items():
-                if isinstance(value, pd.DataFrame):
-                    node['feature_args'][func][param_name] = 'stripped'  # 源数据只有一个：df
+        # for func, kwargs in node['feature_args'].items():
+        #     for param_name, value in kwargs.items():
+        #         if isinstance(value, pd.DataFrame):
+        #             node['feature_args'][func][param_name] = 'stripped'  # 源数据只有一个：df
 
         node['node_stripped'] = True
 
@@ -502,15 +508,17 @@ class Tools(object):
                 if name == 'df_source':
                     node['feature_args'][func][name] = df  # 添加源数据
 
-        for key, value in node['class_kw']:
-            if value == 'stripped':
-                func = node['class_kw_func'][key]
-                feature = func(**node['feature_args'][func])
-                node['class_kw'][key] = feature  # 还原feature数据
+
+        # TODO: update
+        # for key, value in node['class_kw']:
+        #     if value == 'stripped':
+        #         func = node['class_kw_func'][key]
+        #         feature = func(**node['feature_args'][func])
+        #         node['class_kw'][key] = feature  # 还原feature数据
 
         # LV.5 计算分类
         class_function = node['class_func']
-        node['class_data'] = class_function(*node['class_args'], **node['class_kw'])  # 还原分类数据
+        node['class_data'] = class_function(*node['class_args_edges'], **node['class_kw'])  # 还原分类数据
 
         # LV.4 计算赋值
         mapped_data = Tools.get_mapped_data(node['class_data'], node['map_value_list'])
@@ -518,7 +526,7 @@ class Tools(object):
         # LV.3 --无
 
         # LV.2 赋予权重，获得节点数据
-        node['node_data'] = mapped_data * node['weight']  # 还原结果数据
+        node['node_result'] = mapped_data * node['weight']  # 还原结果数据
 
     # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -536,11 +544,11 @@ class Tools(object):
 
         args = []
         for child in child_names:
-            args.append(node_map[child]['node_data'])
+            args.append(node_map[child]['node_result'])
 
         # 计算节点数据
         node_function = node['node_function']
-        node['node_data'] = node_function(*args) * node['weight']
+        node['node_result'] = node_function(*args) * node['weight']
 
     # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -586,7 +594,7 @@ class Tools(object):
 
         root_args = []
         for name in deputy_list:
-            root_args.append(node_map[name]['node_data'])
+            root_args.append(node_map[name]['node_result'])
 
         pos_should_alpha = root_function(*root_args)
 
@@ -771,7 +779,7 @@ class Tools(object):
 
     # LV.4-5 ----------------------------------------------------------------------------------------------------------
     @staticmethod
-    def update_node_terminal(node_data, *, new_mapping_list=None, new_edge_list=None, new_mutable_list=None):
+    def update_node_terminal(node_data, *, new_mapping_list=None, new_edge_list=None):
         """更新节点字典数据"""
 
         updated = False
@@ -780,11 +788,9 @@ class Tools(object):
             node_data['map_value_list'] = new_mapping_list.copy()
             updated = True
 
-        if new_edge_list and new_edge_list != node_data['class_args']:
+        if new_edge_list and new_edge_list != node_data['class_args_edges']:
             new_edge_list.sort()  # 记得要排序一下！
-            node_data['class_args'] = new_edge_list.copy()
-            if new_mutable_list:
-                node_data['class_args_mutable'] = new_mutable_list.copy()  # 跟随'class_args'， 一一对应
+            node_data['class_args_edges'] = new_edge_list.copy()
             updated = True
 
         return updated
@@ -845,66 +851,55 @@ class Tools(object):
         @param node_data: dict of the node in node_map, include:
             - 'map_value_list': the LIST to get mutated.
             - 'map_type': to direct the mutation.
-            - 'class_args': to be changed if any mutation happened on mapping_list.
+            - 'class_args_edges': to be changed if any mutation happened on mapping_list.
         @param revalue_pb: probability of any  mutation happened.
         @param jump_pb:
         @param merge_pb: probability of merging 2(or more) same value into 1 value.
-        @param cut_pb: probability of cutting 1 value into 2. ('class_args' cut at random distance)
+        @param cut_pb: probability of cutting 1 value into 2. ('class_args_edges' cut at random distance)
         @param clear_pb: probability of deleting the value between 2 same value.
         @param smooth_pb: probability of adding a 0 value betweent -1 & 1 (for 'vector' map_type only)
         @return: True for any mutation happened for mapping_list(and classify_args)
 
-        NOTE: inplace. all pb are independent. Error if node_data['class_args'] contains other than edges.
+        NOTE: inplace. all pb are independent. Error if node_data['class_args_edges'] contains other than edges.
         """
 
         mutation_tag = False
-        edge_list = node_data['class_args']  # 分类的切割点边界值 
+        edge_list = node_data['class_args_edges']  # 分类的切割点边界值 
         map_type = node_data['map_type']
 
         if map_type == ('multiplier' or 'mult'):
             return mutation_tag  # 增强类型的数据，不进行分类赋值
 
-        mutable_list = node_data['class_args_mutable']
-        edges_clean = Tools.check_full_in_list(True, mutable_list)
-
         # 注意，mutation的5项的顺序是有考虑的，且完成一个到下一个，不要随意改变先后次序或合并
+        # 1. mapping_list 连续同值合并【优化】 --merge_pb
+        if merge_pb and len(edge_list) > 1:
+            merged = Tools.mutate_mapping_list_merge_same(node_data, merge_pb=merge_pb)
+            if merged:
+                mutation_tag = True
+                print('mapping_list: merged')
 
-        if edges_clean:
+        # 2. mapping_list 跳值平滑【优化】  --smooth_pb
+        if map_type == 'vector' and smooth_pb:
+            smoothed = Tools.mutate_mapping_list_jump_smooth(node_data, smooth_pb=smooth_pb)
+            if smoothed:
+                mutation_tag = True
+                print('mapping_list: smoothed')
 
-            # 1. mapping_list 连续同值合并【优化】 --merge_pb
-            if merge_pb and len(edge_list) > 1:
-                merged = Tools.mutate_mapping_list_merge_same(node_data, merge_pb=merge_pb)
-                if merged:
-                    mutation_tag = True
-                    print('mapping_list: merged')
+        # 3. mapping_list 同值间异类剔除【半优化】  --clear_pb
+        if clear_pb:
+            cleared = Tools.mutate_mapping_list_clear_between(node_data, clear_pb=clear_pb)
+            if cleared:
+                mutation_tag = True
+                print('mapping_list: cleared')
 
-            # 2. mapping_list 跳值平滑【优化】  --smooth_pb
-            if map_type == 'vector' and smooth_pb:
-                smoothed = Tools.mutate_mapping_list_jump_smooth(node_data, smooth_pb=smooth_pb)
-                if smoothed:
-                    mutation_tag = True
-                    print('mapping_list: smoothed')
-
-            # 3. mapping_list 同值间异类剔除【半优化】  --clear_pb
-            if clear_pb:
-                cleared = Tools.mutate_mapping_list_clear_between(node_data, clear_pb=clear_pb)
-                if cleared:
-                    mutation_tag = True
-                    print('mapping_list: cleared')
-
-            # 4. mapping_list 数目增加 --cut_pb
-            if cut_pb:
-                cut = Tools.mutate_mapping_list_cut_within(node_data, cut_pb=cut_pb)
-                if cut:
-                    mutation_tag = True
-                    print('mapping_list: cut')
-
-        else:
-            # print('class_args not clean(all edges), cannot modify mapping_list. error 1984')
-            pass
+        # 4. mapping_list 数目增加 --cut_pb
+        if cut_pb:
+            cut = Tools.mutate_mapping_list_cut_within(node_data, cut_pb=cut_pb)
+            if cut:
+                mutation_tag = True
+                print('mapping_list: cut')
 
         # 5. mapping_list 赋值变异 --revalue_pb  (这一步才是这个函数正儿八经最应该做的事情）
-
         if revalue_pb:
             changed = Tools.mutate_mapping_list_change_value(node_data, revalue_pb=revalue_pb, jump_pb=jump_pb)
             if changed:
@@ -945,13 +940,13 @@ class Tools(object):
         注：这个功能在LV.5 中有重复，且更科学（所以这里的概率设置低一些）
         """
 
-        edge_list_new = node_data['class_args'].copy()
+        edge_list_new = node_data['class_args_edges'].copy()
         if not edge_list_new:
             return False  # 缺乏切割的参考edge值，会导致出错。
 
         mapping_list_new = node_data['map_value_list'].copy()
-        zoom_of_sep = node_data['class_edge_sep']
-        zoom_short_edge = node_data['class_zoom_short']
+        zoom_of_sep = node_data['edge_mut_range']['sep']
+        zoom_short_edge = node_data['edge_mut_range']['too_short']
         zoom_at_border = zoom_short_edge * add_zoom_mul  # 如新增在两端，用此确定切割的edge值
         if zoom_short_edge < zoom_of_sep * 3:
             zoom_short_edge = zoom_of_sep * 3  # 切割两端都需要至少（可等于）保留一个sep，故3
@@ -994,11 +989,8 @@ class Tools(object):
                     add_num += 1
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new
-                                                  )
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1011,8 +1003,8 @@ class Tools(object):
         """
 
         mapping_list_new = node_data['map_value_list'].copy()
-        edge_list_new = node_data['class_args'].copy()
-        zoom_of_sep = node_data['class_edge_sep']
+        edge_list_new = node_data['class_args_edges'].copy()
+        zoom_of_sep = node_data['edge_mut_range']['sep']
 
         clear_order_list = []
         last_value_1 = None  # last value in mapping_list
@@ -1053,10 +1045,8 @@ class Tools(object):
                     pop_num += 1
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new)
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1071,11 +1061,11 @@ class Tools(object):
         """
 
         mapping_list_new = node_data['map_value_list'].copy()
-        edge_list_new = node_data['class_args'].copy()
+        edge_list_new = node_data['class_args_edges'].copy()
 
         # 这里的做法是，预先设定zoom值（固定），插入。后期可考虑动态调整zoom值(要考虑前后边界的情况：缺失、太窄等)
-        add_zoom = node_data['class_zoom_short'] * smooth_zoom_mul
-        zoom_of_sep = node_data['class_edge_sep']
+        add_zoom = node_data['edge_mut_range']['too_short'] * smooth_zoom_mul
+        zoom_of_sep = node_data['edge_mut_range']['sep']
 
         add_tag_list = []
         last_value_1 = None  # last value in mapping_list
@@ -1118,10 +1108,8 @@ class Tools(object):
                 edge_list_new.insert(arg_tag, new_edge_before)
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new)
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1131,7 +1119,7 @@ class Tools(object):
         """mapping_list 连续同值合并【优化】"""
 
         mapping_list_new = node_data['map_value_list'].copy()
-        edge_list_new = node_data['class_args'].copy()
+        edge_list_new = node_data['class_args_edges'].copy()
 
         merge_tag_list = []
         last_value_1 = None  # last value in mapping_list
@@ -1161,10 +1149,8 @@ class Tools(object):
                 pop_num += 1
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new)
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1207,33 +1193,20 @@ class Tools(object):
 
         mutation_tag = False
 
-        mutable_list = node_data['class_args_mutable']
-        node_mutable = Tools.check_any_in_list(True, mutable_list)  # 需至少存在一个可变异的edge
-        if not node_mutable:
-            print('error: no edge args mutable. 6915')
-            return False  # 不存在任何可变异的edge（理论上不应该出现这种情况）
+        # 1. edge 太近删除
+        if pop_pb:
+            poped = Tools.mutate_edge_pop(node_data, pop_pb=pop_pb)
+            if poped:
+                mutation_tag = True
+                print('class_edge: poped.')
 
-        edges_clean = Tools.check_full_in_list(True, mutable_list)
+        # 2. edge 太远插入
+        if insert_pb:
+            inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, add_zoom_mul=add_zoom_mul)
+            if inserted:
+                mutation_tag = True
+                print('class_edge: inserted.')
 
-        if edges_clean:
-
-            # 1. edge 太近删除
-            if pop_pb:
-                poped = Tools.mutate_edge_pop(node_data, pop_pb=pop_pb)
-                if poped:
-                    mutation_tag = True
-                    print('class_edge: poped.')
-
-            # 2. edge 太远插入
-            if insert_pb:
-                inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, add_zoom_mul=add_zoom_mul)
-                if inserted:
-                    mutation_tag = True
-                    print('class_edge: inserted.')
-
-        else:
-            # print('class_args not clean(all edges), cannot modify mapping_list. error 1984')
-            pass
 
         # 3. edge 切割点移动
         if move_pb:
@@ -1249,37 +1222,22 @@ class Tools(object):
     def mutate_edge_move(node_data, *, move_pb):
         """切割边界变异：移动边界"""
 
-        edge_list = node_data['class_args']
-        edge_list_new = []  # 这里的写法与 mutate_mapping_list_* 中的不同，考虑到部分参数不是edge的情况，更严谨
-        mutable_list = node_data['class_args_mutable']  # 需引用，但没有更新变化
-        not_mutable_tag = []
-        zoom_of_sep = node_data['class_edge_sep']
+        edge_list = node_data['class_args_edges']
+        edge_list_new = []  # 这里的写法与 mutate_mapping_list_* 中的不同，因之前考虑到部分参数不是edge的情况（现已删除相关检验）
+        zoom_of_sep = node_data['edge_mut_range']['sep']
 
-        mutable_num = 0
-        for i in mutable_list:
-            if i is True:
-                mutable_num += 1
-        move_pb_each = Tools.probability_each(object_num=mutable_num, pb_for_all=move_pb)
+        move_pb_each = Tools.probability_each(object_num=len(edge_list), pb_for_all=move_pb)
 
-        num = 0
-        for edge, mutable in zip(edge_list, mutable_list):
-
-            if mutable is True:
-                if random.random() < move_pb_each:
-                    new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)
-                    while Tools.check_in_list(new_edge, edge_list):
-                        new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)  # 避免与已有的其他edge重合
-                    edge_list_new.append(new_edge)
-                else:
-                    edge_list_new.append(edge)
+        for edge in edge_list:
+            if random.random() < move_pb_each:
+                new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)
+                while Tools.check_in_list(new_edge, edge_list):
+                    new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)  # 避免与已有的其他edge重合
+                edge_list_new.append(new_edge)
             else:
-                not_mutable_tag.append(num)
-
-            num += 1
+                edge_list_new.append(edge)
 
         edge_list_new.sort()
-        for tag in not_mutable_tag:
-            edge_list_new.insert(tag, edge_list[tag])
 
         # 更新node
         node_updated = Tools.update_node_terminal(node_data, new_edge_list=edge_list_new)
@@ -1291,14 +1249,14 @@ class Tools(object):
     def mutate_edge_insert(node_data, *, insert_pb, add_zoom_mul=1.5):
         """切割边界变异：太远了，插入"""
 
-        edge_list = node_data['class_args']
-        edge_list_new = node_data['class_args'].copy()
+        edge_list = node_data['class_args_edges']
+        edge_list_new = node_data['class_args_edges'].copy()
         mapping_list = node_data['map_value_list']
         mapping_list_new = node_data['map_value_list'].copy()
 
-        long_edge = node_data['class_zoom_long']
-        zoom_distance_edge = node_data['class_zoom_short'] * add_zoom_mul
-        zoom_of_sep = node_data['class_edge_sep']
+        long_edge = node_data['edge_mut_range']['too_long']
+        zoom_distance_edge = node_data['edge_mut_range']['too_short'] * add_zoom_mul
+        zoom_of_sep = node_data['edge_mut_range']['sep']
         map_type = node_data['map_type']
 
         long_tag_list = []
@@ -1347,10 +1305,8 @@ class Tools(object):
                     add_num += 2  # NOTE 2 here.
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new)
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1359,12 +1315,12 @@ class Tools(object):
     def mutate_edge_pop(node_data, *, pop_pb):
         """切割边界变异：太近了，删除"""
 
-        edge_list = node_data['class_args']
-        edge_list_new = node_data['class_args'].copy()
+        edge_list = node_data['class_args_edges']
+        edge_list_new = node_data['class_args_edges'].copy()
         mapping_list = node_data['map_value_list']
         mapping_list_new = node_data['map_value_list'].copy()
 
-        short_edge = node_data['class_zoom_short']
+        short_edge = node_data['edge_mut_range']['too_short']
 
         short_tag_list = []
         old_edge = None
@@ -1392,10 +1348,8 @@ class Tools(object):
                 pop_num += 1
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new)
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1443,78 +1397,64 @@ class Tools(object):
                     print('class_kw: "%s" value mutated.' % key)
 
         # 2. mutate feature
-        # TODO finish
 
-        # 提取feature计算函数
-        func_list = []
-        for value in node_data['class_kw_func'].values():
-            if type(value) == type(Tools.agg_cal):
-                func_list.append(value)
+        
 
-        # 计算每个参数的变异概率
-        mut_arg_num = 0
-        for func in func_list:
+        # 字典结构的旧方法
 
-            for mut_data in node_data['feature_args_range'][func]:
-                if mut_data:
-                    if isinstance(mut_data, dict) and mut_data['sep']:  # 对于dict类别定义的参数范围
-                        mut_arg_num += 1
-                    if isinstance(mut_data, list) and mut_data:  # 对于list类别定义的参数范围
-                        mut_arg_num += 1  # += len(mut_data) - 1  # --太极端了，改变类别的概率不应该大于改变参数的概率
+        # # 提取feature计算函数
+        # func_list = []
+        # for value in node_data['class_kw_func'].values():
+        #     if type(value) == type(Tools.agg_cal):
+        #         func_list.append(value)
 
-        arg_mut_pb = Tools.probability_each(object_num=mut_arg_num, pb_for_all=refeature_pb)
+        # # 计算每个参数的变异概率
+        # mut_arg_num = 0
+        # for func in func_list:
 
-        # 参数的变异
-        feature_mut_flag = False
+        #     for mut_data in node_data['feature_args_range'][func]:
+        #         if mut_data:
+        #             if isinstance(mut_data, dict) and mut_data['sep']:  # 对于dict类别定义的参数范围
+        #                 mut_arg_num += 1
+        #             if isinstance(mut_data, list) and mut_data:  # 对于list类别定义的参数范围
+        #                 mut_arg_num += 1  # += len(mut_data) - 1  # --太极端了，改变类别的概率不应该大于改变参数的概率
 
-        if not arg_mut_pb:
-            return class_mut_flag, feature_mut_flag
+        # arg_mut_pb = Tools.probability_each(object_num=mut_arg_num, pb_for_all=refeature_pb)
 
-        for func in func_list:
-            args_dict = node_data['feature_args'][func]  # 获得feature函数的 参数名-参数
-            mut_data_range = node_data['feature_args_range'][func]  # 获得feature函数的 参数名-变化范围
-            # args_dict_new = {}
+        # # 参数的变异
+        # feature_mut_flag = False
 
-            for param_name in args_dict.keys():
-                if mut_data_range[param_name]:  # 可变异
+        # if not arg_mut_pb:
+        #     return class_mut_flag, feature_mut_flag
 
-                    now_param = args_dict[param_name]
-                    new_param = None
+        # for func in func_list:
+        #     args_dict = node_data['feature_args'][func]  # 获得feature函数的 参数名-参数
+        #     mut_data_range = node_data['feature_args_range'][func]  # 获得feature函数的 参数名-变化范围
+        #     # args_dict_new = {}
 
-                    if random.random() < arg_mut_pb:  # 概率允许
-                        choice_box = mut_data_range[param_name].copy()
+        #     for param_name in args_dict.keys():
+        #         if mut_data_range[param_name]:  # 可变异
 
-                        if isinstance(choice_box, dict):
-                            start_value = choice_box['start']
-                            end_value = choice_box['end']
-                            sep_value = choice_box['sep']
-                            new_param = Tools.mutate_value(now_param, start_value=start_value, end_value=end_value, sep=sep_value)
+        #             now_param = args_dict[param_name]
+        #             new_param = None
+
+        #             if random.random() < arg_mut_pb:  # 概率允许
+        #                 choice_box = mut_data_range[param_name].copy()
+
+        #                 if isinstance(choice_box, dict):
+        #                     start_value = choice_box['start']
+        #                     end_value = choice_box['end']
+        #                     sep_value = choice_box['sep']
+        #                     new_param = Tools.mutate_value(now_param, start_value=start_value, end_value=end_value, sep=sep_value)
                         
-                        if isinstance(choice_box, list):
-                            choice_box.remove(now_param)
-                            new_param = choice_box[random.randint(0, len(choice_box) - 1)]
+        #                 if isinstance(choice_box, list):
+        #                     choice_box.remove(now_param)
+        #                     new_param = choice_box[random.randint(0, len(choice_box) - 1)]
 
-                    if new_param:
-                        node_data['feature_args'][func][param_name] = new_param
-                        feature_mut_flag = True
-                        print('feature_args for %s: %s value mutated.' % (func, param_name))
-
-            # index_num = 0
-            # for arg, mut_data in zip(args_dict, mut_data_range):
-            #     if mut_data and random.random() < arg_mut_pb:
-            #         start_value = mut_data['start']
-            #         end_value = mut_data['end']
-            #         sep_value = mut_data['sep']
-            #         arg = Tools.mutate_value(arg, start_value=start_value, end_value=end_value, sep=sep_value)
-
-            #     args_dict_new.append(arg)
-            #     index_num += 1
-
-            # if args_dict_new != args_dict:
-            #     node_data['feature_args'][func] = args_dict_new.copy()
-
-            #     feature_mut_flag = True
-            #     print('feature_args for %s value mutated.' % func)
+        #             if new_param:
+        #                 node_data['feature_args'][func][param_name] = new_param
+        #                 feature_mut_flag = True
+        #                 print('feature_args for %s: %s value mutated.' % (func, param_name))
 
         return class_mut_flag, feature_mut_flag
 

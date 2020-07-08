@@ -4,6 +4,7 @@ import time
 import random
 import numpy as np
 import pandas as pd
+import multiprocessing as mp
 
 from tools import Tools
 
@@ -24,6 +25,8 @@ class Hello(object):
 class Indicator(Tools):
 
     name = 'Indicator'
+    result = pd.Series() 
+    map_type = ['vector', 'condition', 'multiplier']
 
     default_range = dict(df_source=None,
                          column_name=['price_end'],  # 字符类型：list表示，提供参数的变异选项
@@ -34,14 +37,14 @@ class Indicator(Tools):
     score_num = 0
     avg_score = 0
 
-    def __init__(self, *, df_source, name=None, arg_range=None, refeature_pb=0.07):
+
+
+    def __init__(self, *, df_source, arg_range=None, refeature_pb=0.07):
+
+        self.name = self.get_id(self.name)  # feature_ID
+        self.result = pd.Series()   # indicator 计算出来的data 储存在这里
 
         self.df_source = df_source  # data_source. must have.
-
-        if name:
-            self.name = name
-        else:
-            self.name = self.get_id(self.name)  # feature_ID
 
         if not arg_range:
             arg_range = self.default_range
@@ -86,7 +89,6 @@ class Indicator(Tools):
         """计算每个参数的变异概率"""
 
         mut_arg_num = 0
-
         for value in self.arg_range.values():
             if isinstance(value, dict) and value['sep']:
                 mut_arg_num += 1
@@ -117,6 +119,29 @@ class Indicator(Tools):
 
     def get_avg_score(self):
         return self.avg_score  # 获取分数统计信息
+
+    @staticmethod
+    def get_indicator_mutable_dimension_num(arg_range):
+        """indicator中可变异的参数的维度（根据columns数量决定）。"""
+
+        num = 0
+        for value in arg_range.values():
+            if isinstance(value, dict) and value['sep']:
+                num += 1
+            if isinstance(value, list):
+                num += len(value) - 1
+
+        return num
+
+    # ------------------------------------------------------------------------------------------------------------------
+    def copy(self):
+
+        new_ins = self.__class__(df_source=self.df_source, arg_range=self.arg_range, refeature_pb=self.refeature_pb)
+        new_ins.__dict__ = self.__dict__.copy()
+        new_ins.__dict__['kwargs'] = self.__dict__['kwargs'].copy()  # 注意这里，需要深拷贝的数据，要单独写一下
+        new_ins.name = self.get_id('%s' % self.name.split('_')[0])
+
+        return new_ins
 
     # ------------------------------------------------------------------------------------------------------------------
 
@@ -184,7 +209,7 @@ class Indicator(Tools):
 
         return mut_flag
 
-    def cal(self, **kwargs):
+    def cal(self, sleep_time=0.1, *args, **kwargs):
         """rewrite this in subclass """
 
         if not kwargs:
@@ -193,35 +218,47 @@ class Indicator(Tools):
             self.kwargs = kwargs  # look to data from outside
 
         # main calculation starts here -------------------------------------------------------
+
+        print(self.df_source, 'running cal() for instance', self.name)
+        time.sleep(sleep_time)
+
         result = 'to be done.'
 
+
+        # main calculation finish -------------------------------------------------------------
+
+        self.result = result
         return result
 
 
 # ======================================================================================================================
 
 class MA(Indicator):
+    """template"""
 
-    name = 'simple moving average'
+    name = 'simple moving average'   # change indicator name
+    result = pd.Series()  # indicator 计算出来的data
+    map_type = ['vector', 'condition']  # 本计算方式所的结果适应的分类方式
+
     default_range = dict(df_source=None,
                          column_name=['price_end', 'price_start'],
                          window={'start': 5, 'end': 400, 'sep': True}
-                         )
+                         )   # change default argument range
     score_list = []
     score_num = 0
     avg_score = 0
 
     def add_score(self, score):
 
-        super(MA, self).add_score(score)
-        MA.score_list.append(score)
+        super(MA, self).add_score(score)  # change subclass_name
+        MA.score_list.append(score)  # change subclass_name
 
     def update_score(self, sortino_score):
 
-        super(MA, self).update_score(sortino_score)
+        super(MA, self).update_score(sortino_score)    # change subclass_name
 
-        MA.avg_score = (MA.avg_score * MA.score_num + sortino_score) / (MA.score_num + 1)
-        MA.score_num += 1
+        MA.avg_score = (MA.avg_score * MA.score_num + sortino_score) / (MA.score_num + 1)  # change subclass_name
+        MA.score_num += 1  # change subclass_name
 
     def cal(self, **kwargs):
 
@@ -236,144 +273,43 @@ class MA(Indicator):
         window = kwargs['window']
         result = self.df_source[column_name].rolling(window).mean()
 
+        # main calculation finish --------------------------------------------------------------
+
+        self.result = result  # update result data
         return result
 
-# ======================================================================================================================
-
-class WEMA(Indicator):
-
-    name = 'exponential weighted moving average'  # change indicator name
-    default_range = dict(df_source=None,
-                         column_name=['price_end', 'price_start'],
-                         com={'start': 1.0, 'end': 400.0, 'sep': True}  # pd.ewm的com非常适合True自动变异
-                         )  # change default argument range
-    score_list = []
-    score_num = 0
-    avg_score = 0
-
-    def add_score(self, score):
-
-        super(WEMA, self).add_score(score)  # change subclass_name
-        WEMA.score_list.append(score)  # change subclass_name
-
-    def update_score(self, sortino_score):
-
-        super(WEMA, self).update_score(sortino_score)  # change subclass_name
-
-        WEMA.avg_score = (WEMA.avg_score * WEMA.score_num + sortino_score) / (WEMA.score_num + 1)  # change subclass_name
-        WEMA.score_num += 1  # change subclass_name
-
-    def cal(self, kind='com', **kwargs):
-
-        if not kwargs:
-            kwargs = self.kwargs
-        else:
-            self.kwargs = kwargs
-
-        # main calculation starts here ---------------------------------------------------------
-
-        column_name = kwargs['column_name']
-        com = kwargs['com']
-
-        result = self.df_source[column_name].ewm(com=com).mean()
-
-        return result
 
 if __name__ == '__main__':
 
-    # p1 = Hello('AAA indicator')
-    # p1.show('aeaee', 'bibibi', 'cicici', param=654654, additional1='dididid', add2='eieiei')
+    p1 = Hello('AAA indicator')
+    p1.show('aeaee', 'bibibi', 'cicici', param=654654, additional1='dididid', add2='eieiei')
 
-    # indicator_class_test = Indicator(df_source=None)
-    # i = indicator_class_test
-    # print(i)
-    # print(i.get_range())
-    # print(i.get_current_args())
-    # print(i.random_start())
-    #
-    # print('-' * 30)
-    #
-
-
-    # 真实的使用方式：
-
-    df = pd.read_csv('data/bitmex_price_1hour_2020q1.csv') 
-
-    test = MA(df_source=df, refeature_pb=0.5)
-    test2 = WEMA(df_source=df, refeature_pb=0.5)
-    test3 = WEMA(df_source=df, refeature_pb=0.5)
-
-    print(test.name)
-    print(test2.name)
-    print(test3.name)
-
-    test.random_start()
-    test2.random_start()
-    test3.random_start()
-
-    n = 0
-    while n < 10:
-
-        print(n, '------------------------')
-        print('Indic', '\t',  Indicator.score_num, Indicator.avg_score, Indicator.score_list)
-        print('MA  ', '\t',  MA.score_num, MA.avg_score, MA.score_list)
-        print('test', '\t',  test.score_num, test.avg_score, test.score_list)
-        print('WEMA', '\t',  WEMA.score_num, WEMA.avg_score, WEMA.score_list)
-        print('test2', '\t',  test2.score_num, test2.avg_score, test2.score_list)
-        print('test3', '\t',  test3.score_num, test3.avg_score, test3.score_list)
-        print(test3.get_current_args(), test3.get_range())
-
-        score1 = round(random.random() * 100)
-        score2 = round(random.random() * 100)
-        score3 = round(random.random() * 100)
-
-        test.add_score(score1)
-        test2.add_score(score2)
-        test3.add_score(score3)
-
-        test.update_score(score1)
-        test2.update_score(score2)
-        test3.update_score(score3)
-
-        change_flag = test3.mutate_args(refeature_pb=0.8)
-        if change_flag:
-            result = test3.cal()
-
-        n += 1
-        time.sleep(0.2)
+    indicator_class_test = Indicator(df_source=None)
+    i = indicator_class_test
+    print(i)
+    print(i.get_range())
+    print(i.get_current_args())
+    print(i.random_start())
 
     print('-' * 30)
 
-    # print('-' * 30)
 
-    # print(test)
-    # print(test.get_range())
-    # print(test.get_current_args())
+    # 多进程cal计算 调用方式：
+    args_list = []
+    for x in range(9):
+        instance = Indicator(df_source=x)
+        args_for_one = (instance, 1)  # cal所需的参数（只支持位置参数）写在这tuple里，包括self实例本身
+        args_list.append(args_for_one)  # 构造多进程参数列表
 
-    # print('-' * 30)
-    #
-    # print(Indicator.name)
-    # print('Indicator scores: ', Indicator.score_list)
-    # print('MA scores:', MA.score_list)
-    # print('instance scores:', test.score_list)
-    #
-    # print(test.get_range())
-    # print(test.mutate_args(refeature_pb=1))
-    # print(test.get_current_args())
-    # print('-' * 30)
-    # print(test.get_range())
-    # print(test.mutate_args(refeature_pb=0.5, update=True))
-    # print(test.get_current_args())
-    # print('-' * 30)
-    # print(test.get_range())
-    # print(test.mutate_args(refeature_pb=1, update=True))
-    # print(test.get_current_args())
-    # print('-' * 30)
-    # print(test.pb_each)
-    #
-    # print(test.name)
+    Tools.agg_cal(Indicator.cal,  # 实例对应的计算函数，这里是Indicator的实例
+                  *args_list,  # 参数列表
+                  process_num=3  # 多进程数
+                  )
 
-    # print('-' * 30)
+    # copy --------------------------------
 
-    # result = test.cal()
-    # print(result)
+    print('copy issue ----------------------')
+
+    print(i.__dict__)
+
+
