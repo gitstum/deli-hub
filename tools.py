@@ -773,7 +773,7 @@ class Tools(object):
 
     # LV.4-5 ----------------------------------------------------------------------------------------------------------
     @staticmethod
-    def update_node_terminal(node_data, *, new_mapping_list=None, new_edge_list=None, new_mutable_list=None):
+    def update_node_terminal(node_data, *, new_mapping_list=None, new_edge_list=None):
         """更新节点字典数据"""
 
         updated = False
@@ -785,8 +785,6 @@ class Tools(object):
         if new_edge_list and new_edge_list != node_data['class_args_edges']:
             new_edge_list.sort()  # 记得要排序一下！
             node_data['class_args_edges'] = new_edge_list.copy()
-            if new_mutable_list:
-                node_data['class_args_mutable'] = new_mutable_list.copy()  # 跟随'class_args_edges'， 一一对应
             updated = True
 
         return updated
@@ -866,47 +864,36 @@ class Tools(object):
         if map_type == ('multiplier' or 'mult'):
             return mutation_tag  # 增强类型的数据，不进行分类赋值
 
-        mutable_list = node_data['class_args_mutable']
-        edges_clean = Tools.check_full_in_list(True, mutable_list)
-
         # 注意，mutation的5项的顺序是有考虑的，且完成一个到下一个，不要随意改变先后次序或合并
+        # 1. mapping_list 连续同值合并【优化】 --merge_pb
+        if merge_pb and len(edge_list) > 1:
+            merged = Tools.mutate_mapping_list_merge_same(node_data, merge_pb=merge_pb)
+            if merged:
+                mutation_tag = True
+                print('mapping_list: merged')
 
-        if edges_clean:
+        # 2. mapping_list 跳值平滑【优化】  --smooth_pb
+        if map_type == 'vector' and smooth_pb:
+            smoothed = Tools.mutate_mapping_list_jump_smooth(node_data, smooth_pb=smooth_pb)
+            if smoothed:
+                mutation_tag = True
+                print('mapping_list: smoothed')
 
-            # 1. mapping_list 连续同值合并【优化】 --merge_pb
-            if merge_pb and len(edge_list) > 1:
-                merged = Tools.mutate_mapping_list_merge_same(node_data, merge_pb=merge_pb)
-                if merged:
-                    mutation_tag = True
-                    print('mapping_list: merged')
+        # 3. mapping_list 同值间异类剔除【半优化】  --clear_pb
+        if clear_pb:
+            cleared = Tools.mutate_mapping_list_clear_between(node_data, clear_pb=clear_pb)
+            if cleared:
+                mutation_tag = True
+                print('mapping_list: cleared')
 
-            # 2. mapping_list 跳值平滑【优化】  --smooth_pb
-            if map_type == 'vector' and smooth_pb:
-                smoothed = Tools.mutate_mapping_list_jump_smooth(node_data, smooth_pb=smooth_pb)
-                if smoothed:
-                    mutation_tag = True
-                    print('mapping_list: smoothed')
-
-            # 3. mapping_list 同值间异类剔除【半优化】  --clear_pb
-            if clear_pb:
-                cleared = Tools.mutate_mapping_list_clear_between(node_data, clear_pb=clear_pb)
-                if cleared:
-                    mutation_tag = True
-                    print('mapping_list: cleared')
-
-            # 4. mapping_list 数目增加 --cut_pb
-            if cut_pb:
-                cut = Tools.mutate_mapping_list_cut_within(node_data, cut_pb=cut_pb)
-                if cut:
-                    mutation_tag = True
-                    print('mapping_list: cut')
-
-        else:
-            # print('class_args not clean(all edges), cannot modify mapping_list. error 1984')
-            pass
+        # 4. mapping_list 数目增加 --cut_pb
+        if cut_pb:
+            cut = Tools.mutate_mapping_list_cut_within(node_data, cut_pb=cut_pb)
+            if cut:
+                mutation_tag = True
+                print('mapping_list: cut')
 
         # 5. mapping_list 赋值变异 --revalue_pb  (这一步才是这个函数正儿八经最应该做的事情）
-
         if revalue_pb:
             changed = Tools.mutate_mapping_list_change_value(node_data, revalue_pb=revalue_pb, jump_pb=jump_pb)
             if changed:
@@ -996,11 +983,8 @@ class Tools(object):
                     add_num += 1
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new
-                                                  )
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1055,10 +1039,8 @@ class Tools(object):
                     pop_num += 1
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new)
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1120,10 +1102,8 @@ class Tools(object):
                 edge_list_new.insert(arg_tag, new_edge_before)
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new)
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1163,10 +1143,8 @@ class Tools(object):
                 pop_num += 1
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new)
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1209,33 +1187,20 @@ class Tools(object):
 
         mutation_tag = False
 
-        mutable_list = node_data['class_args_mutable']
-        node_mutable = Tools.check_any_in_list(True, mutable_list)  # 需至少存在一个可变异的edge
-        if not node_mutable:
-            print('error: no edge args mutable. 6915')
-            return False  # 不存在任何可变异的edge（理论上不应该出现这种情况）
+        # 1. edge 太近删除
+        if pop_pb:
+            poped = Tools.mutate_edge_pop(node_data, pop_pb=pop_pb)
+            if poped:
+                mutation_tag = True
+                print('class_edge: poped.')
 
-        edges_clean = Tools.check_full_in_list(True, mutable_list)
+        # 2. edge 太远插入
+        if insert_pb:
+            inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, add_zoom_mul=add_zoom_mul)
+            if inserted:
+                mutation_tag = True
+                print('class_edge: inserted.')
 
-        if edges_clean:
-
-            # 1. edge 太近删除
-            if pop_pb:
-                poped = Tools.mutate_edge_pop(node_data, pop_pb=pop_pb)
-                if poped:
-                    mutation_tag = True
-                    print('class_edge: poped.')
-
-            # 2. edge 太远插入
-            if insert_pb:
-                inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, add_zoom_mul=add_zoom_mul)
-                if inserted:
-                    mutation_tag = True
-                    print('class_edge: inserted.')
-
-        else:
-            # print('class_args not clean(all edges), cannot modify mapping_list. error 1984')
-            pass
 
         # 3. edge 切割点移动
         if move_pb:
@@ -1252,36 +1217,21 @@ class Tools(object):
         """切割边界变异：移动边界"""
 
         edge_list = node_data['class_args_edges']
-        edge_list_new = []  # 这里的写法与 mutate_mapping_list_* 中的不同，考虑到部分参数不是edge的情况，更严谨
-        mutable_list = node_data['class_args_mutable']  # 需引用，但没有更新变化
-        not_mutable_tag = []
+        edge_list_new = []  # 这里的写法与 mutate_mapping_list_* 中的不同，因之前考虑到部分参数不是edge的情况（现已删除相关检验）
         zoom_of_sep = node_data['edge_mut_range']['sep']
 
-        mutable_num = 0
-        for i in mutable_list:
-            if i is True:
-                mutable_num += 1
-        move_pb_each = Tools.probability_each(object_num=mutable_num, pb_for_all=move_pb)
+        move_pb_each = Tools.probability_each(object_num=len(edge_list), pb_for_all=move_pb)
 
-        num = 0
-        for edge, mutable in zip(edge_list, mutable_list):
-
-            if mutable is True:
-                if random.random() < move_pb_each:
-                    new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)
-                    while Tools.check_in_list(new_edge, edge_list):
-                        new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)  # 避免与已有的其他edge重合
-                    edge_list_new.append(new_edge)
-                else:
-                    edge_list_new.append(edge)
+        for edge in edge_list:
+            if random.random() < move_pb_each:
+                new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)
+                while Tools.check_in_list(new_edge, edge_list):
+                    new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)  # 避免与已有的其他edge重合
+                edge_list_new.append(new_edge)
             else:
-                not_mutable_tag.append(num)
-
-            num += 1
+                edge_list_new.append(edge)
 
         edge_list_new.sort()
-        for tag in not_mutable_tag:
-            edge_list_new.insert(tag, edge_list[tag])
 
         # 更新node
         node_updated = Tools.update_node_terminal(node_data, new_edge_list=edge_list_new)
@@ -1349,10 +1299,8 @@ class Tools(object):
                     add_num += 2  # NOTE 2 here.
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new)
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
@@ -1394,10 +1342,8 @@ class Tools(object):
                 pop_num += 1
 
         # 更新node
-        mutable_list_new = [True] * len(edge_list_new)  # 因为所有都为True，edges_clean，才能进入本函数
         node_updated = Tools.update_node_terminal(node_data, new_mapping_list=mapping_list_new,
-                                                  new_edge_list=edge_list_new,
-                                                  new_mutable_list=mutable_list_new)
+                                                  new_edge_list=edge_list_new)
 
         return node_updated
 
