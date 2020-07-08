@@ -161,10 +161,30 @@ class Terminal(Tools):
         'compare': [Tools.compare_distance, Tools.compare_sigma],
         'permutation': [Tools.perm_add, Tools.perm_sub, Tools.perm_up, Tools.perm_down],
         'trend': [Tools.sig_trend_strict, Tools.sig_trend_loose, Tools.sig_trend_start_end]
-
     }
 
-    node_data = dict(terminal=True)  # 初始的node_data 就这么多内容
+    node_data = dict(
+        terminal=True,
+        class_data=pd.Series(),
+        map_type=None,
+        class_func=None,
+        class_func_group=None,
+
+        class_args_edges=None,
+        map_value_list=None,
+        edge_mut_range=None,
+        edge_mut_range_keep=None,
+        edge_start_num_range=None,
+        feature_window_ratio_range=None,
+        class_kw=None,
+        class_kw_sep=None,
+        class_kw_ins=None,
+    
+        feature_num_range=None,
+        feature_num=None,
+        class_args_features=None,
+        class_args_features_ins=None
+        )  # 初始的node_data
 
     def __init__(self, *, df_source, terminal_pbs=None, classifier_map=None, classifier_group=None, node_data=None):
 
@@ -174,12 +194,12 @@ class Terminal(Tools):
         self.df_source = df_source
 
         if not terminal_pbs:
-            self.terminal_pbs = Terminal.terminal_pbs
+            self.terminal_pbs = Terminal.terminal_pbs.copy()
         else:
             self.terminal_pbs = terminal_pbs
 
         if not node_data:
-            self.node_data = Terminal.node_data
+            self.node_data = Terminal.node_data.copy()
         else:
             self.node_data = node_data
 
@@ -188,12 +208,17 @@ class Terminal(Tools):
         else:
             self.classifier_map = classifier_map
 
+        if not classifier_group:
+            self.classifier_group = Terminal.classifier_group
+        else:
+            self.classifier_group = classifier_group
+
     def __get_classifier_detail(self, func):
 
         detail = {}
         for name, value in self.classifier_map.items():
             if value['function'] == func:
-                detail = self.classifier_map[name]
+                detail = self.classifier_map[name].copy()
                 break
 
         return detail
@@ -274,12 +299,12 @@ class Terminal(Tools):
             map_value_list = np.random.randint(0, 2, size=value_num)
 
         elif map_type == ('multiplier' or 'mult'):
-            map_value_list = np.geomspace(0.25, 4, num=value_num)
+            for value in np.geomspace(0.25, 4, num=value_num):
+                map_value_list.append(self.fit_to_minimal(value, min_range=0.001))
 
         map_value_list = list(map_value_list)
 
         return map_value_list
-
 
     def __generate_random_edges(self):
 
@@ -294,7 +319,7 @@ class Terminal(Tools):
         if sep == 0:
             return [start]  # sep==0: only value is start_value
         elif sep is True:
-            sep = (end - start) / 20
+            sep = (end - start) / 100
             if isinstance(start, float):
                 keep_float = len(str(start).split('.')[1])
                 sep = self.shorten_float(sep, keep_float)
@@ -304,8 +329,14 @@ class Terminal(Tools):
             end += sep
         edge_choice_box = np.arange(start, end, sep)
 
-        class_args = list(np.random.choice(edge_choice_box, edge_num))
-        return class_args
+        class_args_edges = []
+        for edge in list(np.random.choice(edge_choice_box, edge_num)):
+            if isinstance(sep, float):
+                edge = self.fit_to_minimal(edge, min_range=sep, modify=True)
+            class_args_edges.append(edge)
+        class_args_edges.sort()
+
+        return class_args_edges
 
     # ------------------------------------------------------------------------------------------------------------------
     def get_args(self, strip=True):
@@ -316,19 +347,19 @@ class Terminal(Tools):
             for key, value in node_data.items():
                 if isinstance(value, pd.Series):
                     node_data[key] = self.node_data[key].copy()  # value包含默认浅拷贝的，要深拷贝，才不影响源数据。下同。
-                    node_data[key] = 'pd.Series'  # value直接是sereis的，其实不用。保险起见。
+                    node_data[key] = pd.Series()  # value直接是sereis的，其实不用。保险起见。
                 elif isinstance(value, list):
                     node_data[key] = self.node_data[key].copy()
                     n = 0
                     while n < len(value):
                         if isinstance(value[n], pd.Series):
-                            node_data[key][n] = 'pd.Series'
+                            node_data[key][n] = pd.Series()  # 清空。同上下
                         n += 1
                 elif isinstance(value, dict):
                     for key2, value2 in value.items():
                         if isinstance(value2, pd.Series):
                             node_data[key][key2] = self.node_data[key][key2].copy()
-                            node_data[key][key2] = 'pd.Series'
+                            node_data[key][key2] = pd.Series()
 
         return node_data
 
@@ -438,6 +469,8 @@ class Terminal(Tools):
 
         else:
             raise ValueError('Uncategorized class_function: %s. 9484' % class_func)
+
+        return self.node_data
 
 
     def add_score(self, score):
