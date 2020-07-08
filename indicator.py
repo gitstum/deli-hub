@@ -26,7 +26,7 @@ class Indicator(Tools):
 
     name = 'Indicator'
     result = pd.Series() 
-    map_value_type = ['vector', 'condition', 'multiplier']
+    map_type = ['vector', 'condition', 'multiplier']
 
     default_range = dict(df_source=None,
                          column_name=['price_end'],  # 字符类型：list表示，提供参数的变异选项
@@ -134,6 +134,16 @@ class Indicator(Tools):
         return num
 
     # ------------------------------------------------------------------------------------------------------------------
+    def copy(self):
+
+        new_ins = self.__class__(df_source=self.df_source, arg_range=self.arg_range, refeature_pb=self.refeature_pb)
+        new_ins.__dict__ = self.__dict__.copy()
+        new_ins.__dict__['kwargs'] = self.__dict__['kwargs'].copy()  # 注意这里，需要深拷贝的数据，要单独写一下
+        new_ins.name = self.get_id('%s' % self.name.split('_')[0])
+
+        return new_ins
+
+    # ------------------------------------------------------------------------------------------------------------------
 
     def random_start(self):
         """用于完成突变，并返还计算结果"""
@@ -228,7 +238,7 @@ class MA(Indicator):
 
     name = 'simple moving average'   # change indicator name
     result = pd.Series()  # indicator 计算出来的data
-    map_value_type = ['vector', 'condition', 'multiplier']  # 本计算方式所的结果适应的分类方式
+    map_type = ['vector', 'condition']  # 本计算方式所的结果适应的分类方式
 
     default_range = dict(df_source=None,
                          column_name=['price_end', 'price_start'],
@@ -288,7 +298,7 @@ if __name__ == '__main__':
     args_list = []
     for x in range(9):
         instance = Indicator(df_source=x)
-        args_for_one = (instance, 2)  # cal所需的参数（只支持位置参数）写在这tuple里，包括self实例本身
+        args_for_one = (instance, 1)  # cal所需的参数（只支持位置参数）写在这tuple里，包括self实例本身
         args_list.append(args_for_one)  # 构造多进程参数列表
 
     Tools.agg_cal(Indicator.cal,  # 实例对应的计算函数，这里是Indicator的实例
@@ -296,6 +306,10 @@ if __name__ == '__main__':
                   process_num=3  # 多进程数
                   )
 
+    # copy --------------------------------
 
+    print('copy issue ----------------------')
+
+    print(i.__dict__)
 
 
