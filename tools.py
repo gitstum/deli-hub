@@ -968,7 +968,7 @@ class Tools(object):
 
     # LV.4 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def mutate_mapping_list_cut_within(node_data, *, cut_pb, add_zoom_mul=1.5):
+    def mutate_mapping_list_cut_within(node_data, *, cut_pb, border_zoom_mul=1.5):
         """mapping_list 数目增加：通过将某段赋值切开（但赋值仍相同）
 
         注：这个功能在LV.5 中有重复，且更科学（所以这里的概率设置低一些）
@@ -981,7 +981,7 @@ class Tools(object):
         mapping_list_new = node_data['map_value_list'].copy()
         zoom_of_sep = node_data['edge_mut_range']['sep']
         zoom_short_edge = node_data['edge_mut_range']['too_short']  # TODO: debug too_short = None
-        zoom_at_border = zoom_short_edge * add_zoom_mul  # 如新增在两端，用此确定切割的edge值
+        zoom_at_border = zoom_short_edge * border_zoom_mul  # 如新增在两端，用此确定切割的edge值
         if zoom_short_edge < zoom_of_sep * 3:
             zoom_short_edge = zoom_of_sep * 3  # 切割两端都需要至少（可等于）保留一个sep，故3
 
@@ -1214,14 +1214,14 @@ class Tools(object):
 
     # LV.5 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def mutate_edge(node_data, *, move_pb, pop_pb, insert_pb, add_zoom_mul=1.5, **kwargs):
+    def mutate_edge(node_data, *, move_pb, pop_pb, insert_pb, zoom_distance_mul=1.5, **kwargs):
         """LV.5 MUTATION: 特征分类截取进化函数，对edge的值和数量进行优化
 
         @param node_data: 节点字典数据
         @param move_pb: 有至少一个edge发生移动的概率
         @param pop_pb: 当edge之间太近时，剔除分类的概率
         @param insert_pb: 当edge之间距离太远时，插入分类的概率
-        @param add_zoom_mul: 当edge之间距离太远、插入分类时，后与原区间边界保持的距离（sep倍数）
+        @param zoom_distance_mul: 当edge之间距离太远、插入分类时，后与原区间边界保持的距离（sep倍数）
         @return: True for any change happened.
         """
 
@@ -1236,7 +1236,7 @@ class Tools(object):
 
         # 2. edge 太远插入
         if insert_pb:
-            inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, add_zoom_mul=add_zoom_mul)
+            inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, zoom_distance_mul=zoom_distance_mul)
             if inserted:
                 mutation_tag = True
                 print('lv.5 mutation: class_edge inserted.')
@@ -1280,7 +1280,7 @@ class Tools(object):
 
     # LV.5 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def mutate_edge_insert(node_data, *, insert_pb, add_zoom_mul=1.5):
+    def mutate_edge_insert(node_data, *, insert_pb, zoom_distance_mul=1.5):
         """切割边界变异：太远了，插入"""
 
         edge_list = node_data['class_args_edges']
@@ -1289,7 +1289,7 @@ class Tools(object):
         mapping_list_new = node_data['map_value_list'].copy()
 
         long_edge = node_data['edge_mut_range']['too_long']
-        zoom_distance_edge = node_data['edge_mut_range']['too_short'] * add_zoom_mul
+        zoom_distance_edge = node_data['edge_mut_range']['too_short'] * zoom_distance_mul
         zoom_of_sep = node_data['edge_mut_range']['sep']
         map_type = node_data['map_type']
 
