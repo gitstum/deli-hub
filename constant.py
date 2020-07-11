@@ -199,6 +199,12 @@ class Method(Enum):
 #                                      )
 
 
+# Terminal ---------------------------------------------------------------------------------------------------------
+
+
+
+
+
 if __name__ == '__main__':
     print(Direction.SHORT.value)
     print(Direction.SHORT)

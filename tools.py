@@ -429,7 +429,7 @@ class Tools(object):
             print('error 4765')
             return value  # 暂不支持其他类别变异
 
-        if sep is None:
+        if sep is None or sep is True:
             # 20：主观设定，按 5% 自动计算步长。
             # 整数value的自动步长，要求value不能低于11，否则将sep将为0，无法逆转 [已解决]
             # 最大的缺点在于，对于数值大的value，sep也大，因此很难长期保持 --整体使得value的变异有变小的倾向
@@ -886,7 +886,7 @@ class Tools(object):
             - 'map_value_list': the LIST to get mutated.
             - 'map_type': to direct the mutation.
             - 'class_args_edges': to be changed if any mutation happened on mapping_list.
-        @param revalue_pb: probability of any  mutation happened.
+        @param revalue_pb: probability of any mutation happened.
         @param jump_pb:
         @param merge_pb: probability of merging 2(or more) same value into 1 value.
         @param cut_pb: probability of cutting 1 value into 2. ('class_args_edges' cut at random distance)
