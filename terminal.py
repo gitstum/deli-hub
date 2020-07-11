@@ -22,17 +22,16 @@ class Terminal(Tools):
 
     terminal_pbs = dict(
         merge_pb=0.15, 
-        smooth_pb=0.15,
+        smooth_pb=0.15, smooth_zoom_mul=1.5,
         clear_pb=0.15,
-        cut_pb=0.15,
-        revalue_pb=0.15,
-        jump_pb=0.15,
+        cut_pb=0.15, border_zoom_mul=1.5,
+        revalue_pb=0.15, jump_pb=0.15,
 
         remul_pb=0.15,
         reverse_pb=0.15,
 
         pop_pb=0.15,
-        insert_pb=0.15,
+        insert_pb=0.15, zoom_distance_mul=1.5, 
         move_pb=0.15,
 
         window_pb=0.15,
@@ -289,7 +288,7 @@ class Terminal(Tools):
         indicator_set = set(indicator_list)
         weight_all = 0
         for indicator in indicator_set:
-            weight = indicator.get_indicator_mutable_dimension_num(indicator.default_range) + 1  # +1: 照顾0变异的情况
+            weight = indicator.get_indicator_mutable_dimension_num() + 1  # +1: 照顾0变异的情况
             indicator_pb_dict[indicator] = weight
             weight_all += weight
 
@@ -355,107 +354,572 @@ class Terminal(Tools):
 
         return class_args_edges
 
-    # ------------------------------------------------------------------------------------------------------------------
-    
-    def mutate_mapping_list(self):
+    # LV.4-5 --------------------------------------------------------------------------
+    def __update_node_terminal(self, *, new_mapping_list=None, new_edge_list=None):
+        """更新节点字典数据"""
 
-        mutation_tag = False
+        updated = False
+
+        if new_mapping_list and new_mapping_list != self.node_data['map_value_list']:
+            self.node_data['map_value_list'] = new_mapping_list.copy()
+            updated = True
+
+        if new_edge_list and new_edge_list != self.node_data['class_args_edges']:
+            new_edge_list.sort()  # 记得要排序一下！
+            self.node_data['class_args_edges'] = new_edge_list.copy()
+            updated = True
+
+        return updated
+
+    # LV.4 -----------------------------------------------------------------------------
+    def __get_mapped_data(self):
+        """condition、multiplier 类别不需要经过这个函数"""
+
+        mapped_data = self.class_data.copy()
+        map_value_list = self.node_data['map_value_list']
+        reverse=self.node_data['value_reverse']
+        reverse_type=self.node_data['map_type']
+
+        if map_value_list:
+            
+            num = 0
+            for value in map_value_list:
+                mapped_data[mapped_data == num] = value
+                num += 1
+            # return mapped_data  # 对于cut、compare系列，到这里就结束了
+
+        if reverse:
+
+            ref_data = mapped_data.copy()
+            if reverse_type == 'vector':
+                mapped_data = ref_data * -1
+            elif reverse_type == 'condition':
+                mapped_data = ref_data * 0
+                mapped_data[ref_data == 0] = 1
+            elif reverse_type == 'multiplier':
+                mapped_data = ref_data.reverse()  # TODO: 要检查其他地方是否会sort。。。
+
+            self.node_data['value_reverse'] = False
+
+        return mapped_data
+
+    # LV.4 -----------------------------------------------------------------------------
+    def __mutate_one_value_in_map(value):
+
         map_type = self.node_data['map_type']
+        jump_pb = self.terminal_pbs['jump_pb']
+        new_value = value
 
-        if map_type == 'vector' or map_type == 'condition':
-            mutation_tag = Tools.mutate_mapping_list(self.node_data, **self.terminal_pbs)
-
-        elif map_type == 'multiplier':
-            if 'remul_pb' in self.terminal_pbs and random.random() < self.terminal_pbs['remul_pb']:
-
-                start = self.node_data['multiplier_range']['start']
-                sep = self.node_data['multiplier_range']['sep']
-                end = self.node_data['multiplier_range']['end'] + sep
-                mul_ref = self.mutate_value(self.node_data['multiplier_ref'], start_value=start, end_value=end, sep=sep)
-                self.node_data['multiplier_ref'] = mul_ref
-
-                value_num = len(self.node_data['class_args_edges']) + 1
-                map_value_list = []
-                for value in np.geomspace(1 / mul_ref, mul_ref, num=value_num):
-                    map_value_list.append(self.fit_to_minimal(value, min_range=0.001))
-
-                print('lv.4 mutation: multiplier_zoom reset.')
-                mutation_tag = True
-    
-        return mutation_tag
-
-    def mutate_edge(self):
-
-        # TODO: test
-
-        mutation_tag = False
-        map_type = self.node_data['map_type']
-
-        if map_type == 'vector' or map_type == 'condition':
-            mutation_tag = Tools.mutate_edge(self.node_data, **self.terminal_pbs)
-
-        elif map_type == 'multiplier':
-
-            edge_num = len(self.node_data['class_args_edges'])
-            if 'pop_pb' in self.terminal_pbs and random.random() < self.terminal_pbs['pop_pb']:
-                edge_num -= 1
-
-            if 'insert_pb' in self.terminal_pbs and random.random() < self.terminal_pbs['insert_pb']:
-                edge_num += 1
-
-            if 'move_pb' in self.terminal_pbs:
-                moved = Tools.mutate_edge_move(self.node_data, move_pb=self.terminal_pbs['move_pb'])
-                if moved:
-                    print('lv.5 mutation: edge moved.')
-                    mutation_tag = True
-
-            change_edge_num = False  # 是否需要改变edge数量
-            if edge_num != len(self.node_data['class_args_edges']):
-
-                if self.node_data['edge_num_range']['keep']:  # 目前这个keep只对multiplier有效
-                    min_edge_num = self.node_data['edge_num_range']['start']
-                    max_edge_num = self.node_data['edge_num_range']['end']
-                    if min_edge_num <= edge_num <= max_edge_num:
-                        change_edge_num = True
+        if map_type == 'vector':
+            # bracket = [-1, 0, 1]  # value的值域
+            if value == 0:
+                if random.random() < 0.5:
+                    new_value = -1
                 else:
+                    new_value = 1
+            else:
+                if random.random() < jump_pb:  # jump_pb本身就是each的
+                    if value < 0:
+                        new_value = 1
+                    else:
+                        new_value = -1
+                else:
+                    new_value = 0
+
+        elif map_type == ('cond' or 'condition'):
+            # bracket = [0, 1]
+            if value != 0:
+                new_value = 0
+            else:
+                new_value = 1
+
+        elif map_type == ('multiplier' or 'mult'):
+            new_value = value  # TODO 交给geomspace函数重新切割就好?
+
+        return new_value
+
+    # LV.4 -----------------------------------------------------------------------------
+    def __mutate_mapping_list_change_value(self):
+        """mapping_list 赋值变异 """
+
+        node_data = self.node_data
+        revalue_pb = self.terminal_pbs['revalue_pb']
+        jump_pb = self.terminal_pbs['jump_pb']
+
+        mapping_list = node_data['map_value_list']
+        mapping_list_new = node_data['map_value_list'].copy()
+        map_type = node_data['map_type']
+
+        revalue_pb_each = Tools.probability_each(object_num=len(mapping_list),
+                                                 pb_for_all=revalue_pb)  # 各元素发生变异的独立概率
+
+        n = 0
+        for value in mapping_list:
+            if random.random() < revalue_pb_each:
+                new_value = self.__mutate_one_value_in_map(value)
+                mapping_list_new[n] = new_value
+            n += 1
+
+        # 更新node
+        node_updated = self.__update_node_terminal(new_mapping_list=mapping_list_new)
+
+        return node_updated
+
+    # LV.4 -----------------------------------------------------------------------------
+    def __mutate_mapping_list_cut_within(self):
+        """mapping_list 数目增加：通过将某段赋值切开（但赋值仍相同）
+
+        注：这个功能在LV.5 中有重复，且更科学（所以这里的概率设置低一些）
+        """
+
+        node_data = self.node_data
+        cut_pb = self.terminal_pbs['cut_pb']
+        border_zoom_mul = self.terminal_pbs['border_zoom_mul']
+
+        edge_list_new = node_data['class_args_edges'].copy()
+        if not edge_list_new:
+            return False  # 缺乏切割的参考edge值，会导致出错。
+
+        mapping_list_new = node_data['map_value_list'].copy()
+        zoom_of_sep = node_data['edge_mut_range']['sep']
+        zoom_short_edge = node_data['edge_mut_range']['too_short']  # TODO: debug too_short = None
+        zoom_at_border = zoom_short_edge * border_zoom_mul  # 如新增在两端，用此确定切割的edge值
+        if zoom_short_edge < zoom_of_sep * 3:
+            zoom_short_edge = zoom_of_sep * 3  # 切割两端都需要至少（可等于）保留一个sep，故3
+
+        cut_tag_list = list(range(len(mapping_list_new)))
+
+        cut_pb_each = Tools.probability_each(object_num=len(cut_tag_list),
+                                             pb_for_all=cut_pb)
+
+        add_num = 0
+        for i in cut_tag_list:
+            if random.random() < cut_pb_each:
+
+                if i == 0:
+                    new_edge = Tools.fit_to_minimal(edge_list_new[0] - zoom_at_border,
+                                                    min_range=zoom_of_sep)
+
+                elif i == (len(cut_tag_list) - 1):
+                    new_edge = Tools.fit_to_minimal(edge_list_new[-1] + zoom_at_border,
+                                                    min_range=zoom_of_sep)
+
+                else:
+                    edge_before = edge_list_new[i + add_num - 1]
+                    edge_after = edge_list_new[i + add_num]
+                    cut_zoom = abs(edge_after - edge_before)
+                    if cut_zoom < zoom_short_edge:
+                        # print('zoom too short, no cut within. issue: 1965')
+                        new_edge = None
+                    else:
+                        cut_zoom = cut_zoom - 2 * zoom_of_sep  # 保留sep后的真实可切割空间
+                        # new_edge = (edge_before + edge_after) / 2  # 最简单的方式是取中间值，但不够随机
+                        new_edge = Tools.fit_to_minimal(edge_before + zoom_of_sep + cut_zoom * random.random(),
+                                                        min_range=zoom_of_sep)  # 升级版处理方式：保留sep的随机切割
+
+                if new_edge is not None:
+                    edge_list_new.insert(i, new_edge)
+                    add_value = mapping_list_new[i + add_num]
+                    mapping_list_new.insert(i + add_num, add_value)  # 仅仅切割开，并不改变赋值
+
+                    add_num += 1
+
+        # 更新node
+        node_updated = self.__update_node_terminal(new_mapping_list=mapping_list_new, new_edge_list=edge_list_new)
+
+        return node_updated
+
+    # LV.4 -----------------------------------------------------------------------------
+    def __mutate_mapping_list_clear_between(self):
+        """mapping_list 同值间异类剔除【半优化】
+
+        注：这个功能在LV.5 中有重复，且更科学（所以这里的概率设置低一些）
+        """
+
+        node_data = self.node_data
+        clear_pb = self.terminal_pbs['clear_pb']
+
+        mapping_list_new = node_data['map_value_list'].copy()
+        edge_list_new = node_data['class_args_edges'].copy()
+        zoom_of_sep = node_data['edge_mut_range']['sep']
+
+        clear_order_list = []
+        last_value_1 = None  # last value in mapping_list
+        last_value_2 = None  # last value of the last value
+
+        num = -1  # NOTE, different here.
+        for value in mapping_list_new:
+
+            if last_value_2 == value:  # 前前一个等于当前 --既包括中间异类，也包括中间同类
+                clear_order_list.append(num)
+
+            last_value_2 = last_value_1
+            last_value_1 = value
+            num += 1
+
+        if not clear_order_list:
+            return False  # 不存在同值间异
+
+        clear_pb_each = Tools.probability_each(object_num=len(clear_order_list),
+                                               pb_for_all=clear_pb)
+        pop_num = 0
+        for i in clear_order_list:
+            if random.random() < clear_pb_each:
+
+                old_edge_before = edge_list_new[i - pop_num - 1]
+                old_edge_after = edge_list_new[i - pop_num]
+                cut_zoom = old_edge_after - old_edge_before
+                new_edge_value = Tools.fit_to_minimal(old_edge_before + cut_zoom * random.random(),
+                                                      min_range=zoom_of_sep)  # 处理方式：随机切割
+
+                # 如在fit_to_minimal之后和两端相等，那就没法切割出有意义的赋值区间了
+                if old_edge_before < new_edge_value < old_edge_after:
+                    edge_list_new.pop(i - pop_num)
+                    edge_list_new.pop(i - pop_num - 1)
+                    edge_list_new.insert(i - pop_num - 1, new_edge_value)
+
+                    mapping_list_new.pop(i - pop_num)  # 清除中间值，两头值并没有合并
+                    pop_num += 1
+
+        # 更新node
+        node_updated = self.__update_node_terminal(new_mapping_list=mapping_list_new, new_edge_list=edge_list_new)
+
+        return node_updated
+
+    # LV.4 -----------------------------------------------------------------------------
+    def __mutate_mapping_list_jump_smooth(self):
+        """mapping_list 跳值平滑（插入）【优化】
+
+        @param node_data:
+        @param smooth_pb:
+        @param smooth_zoom_mul: LV.5 mutation 中抹掉分类的临界值的倍数
+        """
+
+        node_data = self.node_data
+        smooth_pb = self.terminal_pbs['smooth_pb']
+        smooth_zoom_mul = self.terminal_pbs['smooth_zoom_mul']
+
+        mapping_list_new = node_data['map_value_list'].copy()
+        edge_list_new = node_data['class_args_edges'].copy()
+
+        # 这里的做法是，预先设定zoom值（固定），插入。后期可考虑动态调整zoom值(要考虑前后边界的情况：缺失、太窄等)
+        add_zoom = node_data['edge_mut_range']['too_short'] * smooth_zoom_mul
+        zoom_of_sep = node_data['edge_mut_range']['sep']
+
+        add_tag_list = []
+        last_value_1 = None  # last value in mapping_list
+
+        num = 0
+
+        for value in mapping_list_new:
+
+            if last_value_1 is None:
+                last_value_1 = value
+                num += 1
+                continue
+
+            if value * last_value_1 < 0:
+                add_tag_list.append(num)
+
+            last_value_1 = value
+            num += 1
+
+        if not add_tag_list:
+            return False  # 不存在跳值
+
+        smooth_pb_each = Tools.probability_each(object_num=len(add_tag_list),
+                                                pb_for_all=smooth_pb)
+
+        add_num = 0
+        for i in add_tag_list:
+            if random.random() < smooth_pb_each:
+                mapping_list_new.insert(i + add_num, 0)  # 插入0到符号变化之间，以平滑
+
+                arg_tag = i + add_num - 1
+                old_edge = edge_list_new[i - 1]
+                new_edge_before = Tools.fit_to_minimal(old_edge - add_zoom / 2,
+                                                       min_range=zoom_of_sep)
+                new_edge_after = Tools.fit_to_minimal(old_edge + add_zoom / 2,
+                                                      min_range=zoom_of_sep)
+
+                edge_list_new.pop(arg_tag)
+                edge_list_new.insert(arg_tag, new_edge_after)
+                edge_list_new.insert(arg_tag, new_edge_before)
+
+        # 更新node
+        node_updated = self.__update_node_terminal(new_mapping_list=mapping_list_new, new_edge_list=edge_list_new)
+
+        return node_updated
+
+    # LV.4 -----------------------------------------------------------------------------
+    def __mutate_mapping_list_merge_same(self):
+        """mapping_list 连续同值合并【优化】"""
+
+        node_data = self.node_data
+        merge_pb = self.terminal_pbs['merge_pb']
+
+        mapping_list_new = node_data['map_value_list'].copy()
+        edge_list_new = node_data['class_args_edges'].copy()
+
+
+        merge_tag_list = []
+        last_value_1 = None  # last value in mapping_list
+
+        num = 0
+        for value in mapping_list_new:
+            if value == last_value_1:
+                merge_tag_list.append(num)  # 记录相同赋值的后者的下标
+            last_value_1 = value
+            num += 1
+
+        if not merge_tag_list:
+            return False  # 不存连续部分
+
+        merge_pb_each = Tools.probability_each(object_num=len(merge_tag_list),
+                                               pb_for_all=merge_pb)
+
+        pop_num = 0
+        for i in merge_tag_list:
+
+            if len(edge_list_new) <= 1:
+                break  # 如出现多个（如2个）切割edge，但对应的value（3个）相同时，有可能同时被pop，故限制
+
+            if random.random() < merge_pb_each:
+                mapping_list_new.pop(i - pop_num)
+                edge_list_new.pop(i - pop_num - 1)  # 相同赋值的后者的下标，对应于前一个下标的切割器
+                pop_num += 1
+
+        # 更新node
+        node_updated = self.__update_node_terminal(new_mapping_list=mapping_list_new, new_edge_list=edge_list_new)
+
+        return node_updated
+
+    # LV.4 -----------------------------------------------------------------------------
+    def __mutate_mapping_list_multiplier(self):
+
+        if not random.random() < self.terminal_pbs['remul_pb']:
+            return False
+
+        start = self.node_data['multiplier_range']['start']
+        sep = self.node_data['multiplier_range']['sep']
+        end = self.node_data['multiplier_range']['end'] + sep
+        mul_ref = Tools.mutate_value(self.node_data['multiplier_ref'], start_value=start, end_value=end, sep=sep)
+        self.node_data['multiplier_ref'] = mul_ref
+
+        value_num = len(self.node_data['class_args_edges']) + 1  # value 比 edge 多一个
+        map_value_list = []
+        for value in np.geomspace(1 / mul_ref, mul_ref, num=value_num):
+            map_value_list.append(self.fit_to_minimal(value, min_range=0.001))
+
+        node_updated = self.__update_node_terminal(new_mapping_list=map_value_list)
+
+        return node_updated
+
+    # LV.5 ----------------------------------------------------------------------------
+    def __mutate_edge_move(self):
+        """切割边界变异：移动边界"""
+
+        node_data = self.node_data
+        move_pb = self.terminal_pbs['move_pb']
+
+        edge_list = node_data['class_args_edges']
+        edge_list_new = []  # 这里的写法与 mutate_mapping_list_* 中的不同，因之前考虑到部分参数不是edge的情况（现已删除相关检验）
+        zoom_of_sep = node_data['edge_mut_range']['sep']
+
+        move_pb_each = Tools.probability_each(object_num=len(edge_list), pb_for_all=move_pb)
+
+        for edge in edge_list:
+            if random.random() < move_pb_each:
+                new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)
+                while Tools.check_in_list(new_edge, edge_list):
+                    new_edge = Tools.mutate_value(edge, sep=zoom_of_sep)  # 避免与已有的其他edge重合
+                edge_list_new.append(new_edge)
+            else:
+                edge_list_new.append(edge)
+
+        edge_list_new.sort()
+
+        # 更新node
+        node_updated = self.__update_node_terminal(new_edge_list=edge_list_new)
+
+        return node_updated
+
+    # LV.5 ----------------------------------------------------------------------------
+    def __mutate_edge_insert(self):
+        """切割边界变异：太远了，插入"""
+
+        node_data = self.node_data
+        insert_pb = self.terminal_pbs['insert_pb']
+        zoom_distance_mul = self.terminal_pbs['zoom_distance_mul']
+
+
+        edge_list = node_data['class_args_edges']
+        edge_list_new = node_data['class_args_edges'].copy()
+        mapping_list = node_data['map_value_list']
+        mapping_list_new = node_data['map_value_list'].copy()
+
+        long_edge = node_data['edge_mut_range']['too_long']
+        zoom_distance_edge = node_data['edge_mut_range']['too_short'] * zoom_distance_mul
+        zoom_of_sep = node_data['edge_mut_range']['sep']
+        map_type = node_data['map_type']
+
+        long_tag_list = []
+        old_edge = None
+
+        num = 0
+        for edge in edge_list:
+
+            if old_edge is not None:
+                if edge - old_edge > long_edge:
+                    long_tag_list.append(num)
+
+            old_edge = edge
+            num += 1
+
+        if not long_tag_list:
+            return False  # 不存在太长的区间
+
+        insert_pb_each = Tools.probability_each(object_num=len(long_tag_list), pb_for_all=insert_pb)
+
+        add_num = 0
+        for i in long_tag_list:
+            if random.random() < insert_pb_each:
+
+                edge_before = edge_list_new[i + add_num - 1]
+                edge_after = edge_list_new[i + add_num]
+
+                zoom_line_before = edge_before + zoom_distance_edge  # 真实取值起点，与前方edge保持一定距离
+                zoom_line_after = edge_after - zoom_distance_edge
+                zoom = zoom_line_after - zoom_line_before
+                if zoom < zoom_distance_edge:
+                    continue  # double check, to see if the zoom is big enough for a cut in.
+
+                point1 = Tools.fit_to_minimal(zoom_line_before + zoom * random.random(), min_range=zoom_of_sep)
+                point2 = Tools.fit_to_minimal(zoom_line_before + zoom * random.random(), min_range=zoom_of_sep)
+
+                if point1 != point2:
+                    edge_list_new.insert(i + add_num, max(point1, point2))
+                    edge_list_new.insert(i + add_num, min(point1, point2))
+
+                    cut_value = mapping_list[i]
+                    mapping_list_new.insert(i + add_num, self.__mutate_one_value_in_map(cut_value))
+                    mapping_list_new.insert(i + add_num, cut_value)  # cut_value中间夹着一个变异后的value
+
+                    add_num += 2  # NOTE 2 here.
+
+        # 更新node
+        node_updated = self.__update_node_terminal(new_mapping_list=mapping_list_new, new_edge_list=edge_list_new)
+
+        return node_updated
+
+    # LV.5 ----------------------------------------------------------------------------
+    def __mutate_edge_pop(self):
+        """切割边界变异：太近了，删除"""
+
+        node_data = self.node_data
+        pop_pb = self.terminal_pbs['pop_pb']
+
+        edge_list = node_data['class_args_edges']
+        edge_list_new = node_data['class_args_edges'].copy()
+        mapping_list = node_data['map_value_list']
+        mapping_list_new = node_data['map_value_list'].copy()
+
+        short_edge = node_data['edge_mut_range']['too_short']
+
+        short_tag_list = []
+        old_edge = None
+
+        num = 0
+        for edge in edge_list:
+
+            if old_edge is not None:
+                if edge - old_edge < short_edge:
+                    short_tag_list.append(num)
+
+            old_edge = edge
+            num += 1
+
+        if not short_tag_list:
+            return False  # no short zoom
+
+        pop_pb_each = Tools.probability_each(object_num=len(short_tag_list), pb_for_all=pop_pb)
+
+        pop_num = 0
+        for i in short_tag_list:
+            if random.random() < pop_pb_each:
+                edge_list_new.pop(i - pop_num)
+                mapping_list_new.pop(i - pop_num)
+                pop_num += 1
+
+        # 更新node
+        node_updated = self.__update_node_terminal(new_mapping_list=mapping_list_new, new_edge_list=edge_list_new)
+
+        return node_updated
+
+    # LV.5 ----------------------------------------------------------------------------
+    def __mutate_edge_mult_change(self, target_edge_num):
+
+        change_edge_num = False  # 是否需要改变edge数量
+        
+        if target_edge_num != len(self.node_data['class_args_edges']):
+
+            if self.node_data['edge_num_range']['keep']:  # TODO 目前这个keep只对multiplier有效  
+                min_edge_num = self.node_data['edge_num_range']['start']
+                max_edge_num = self.node_data['edge_num_range']['end']
+                if min_edge_num <= target_edge_num <= max_edge_num:
                     change_edge_num = True
+            else:
+                change_edge_num = True
 
-            # 处理pop/insert  --最简单的做法：edge中间随机加一刀/减一刀
-            if change_edge_num:
+        # 处理pop/insert  --最简单的做法：edge中间随机加一刀/减一刀
+        if change_edge_num:
 
-                if edge_num < len(self.node_data['class_args_edges']):
+            if target_edge_num < len(self.node_data['class_args_edges']):
 
-                    remove_edge = random.choice(self.node_data['class_args_edges'])
-                    self.node_data['class_args_edges'].remove(remove_edge)
-                    print('lv.5 mutation: edge poped.')
+                remove_edge = random.choice(self.node_data['class_args_edges'])
+                self.node_data['class_args_edges'].remove(remove_edge)
+                print('lv.5 mutation: mult edge poped.')
+
+            elif target_edge_num > len(self.node_data['class_args_edges']):
+
+                edge_sep = self.node_data['edge_mut_range']['sep']
+                edge_min = min(self.node_data['class_args_edges'])
+                edge_max = max(self.node_data['class_args_edges'])
+
+                if edge_sep is True:
+                    edge_sep = (edge_max - edge_min) / 50
+                    if isinstance(edge_min, float):
+                        keep_float = len(str(edge_min).split('.')[1])
+                        edge_sep = self.shorten_float(edge_sep, keep_float)
+                    else:
+                        edge_sep = int(edge_sep)
+
+                choice_box = np.arange(edge_min + edge_sep, edge_max, edge_sep)
+                if not choice_box:
+                    return False
+                    
+                new_edge = np.random.choice(choice_box)
+                while new_edge in self.node_data['class_args_edges']:
+                    new_edge += edge_sep
+                self.node_data['class_args_edges'].append(new_edge)
+                self.node_data['class_args_edges'].sort()
+                print('lv.5 mutation: mult edge inserted.')
+
+            # 更新map
+            mul_ref = self.node_data['multiplier_ref']
+            value_num = len(self.node_data['class_args_edges']) + 1  # value 比 edge 多一个
+            map_value_list = []
+            for value in np.geomspace(1 / mul_ref, mul_ref, num=value_num):
+                map_value_list.append(self.fit_to_minimal(value, min_range=0.001))
+
+            self.__update_node_terminal(new_mapping_list=map_value_list)
+
+        return change_edge_num
 
 
-                elif edge_num > len(self.node_data['class_args_edges']):
-
-                    edge_sep = self.node_data['edge_mut_range']['sep']
-                    edge_min = min(self.node_data['class_args_edges'])
-                    edge_max = max(self.node_data['class_args_edges'])
-                    if edge_sep is True:
-                        edge_sep = (edge_max - edge_min) / 50
-                        if isinstance(edge_min, float):
-                            keep_float = len(str(edge_min).split('.')[1])
-                            edge_sep = self.shorten_float(edge_sep, keep_float)
-                        else:
-                            edge_sep = int(edge_sep)
-
-                    new_edge = np.random.choice(np.arange(edge_min + edge_sep, edge_max, edge_sep))
-                    while new_edge in self.node_data['class_args_edges']:
-                        new_edge += edge_sep
-                    self.node_data['class_args_edges'].append(new_edge)
-                    self.node_data['class_args_edges'].sort()
-                    print('lv.5 mutation: edge inserted.')
-
-                mutation_tag = True
-
-        return mutation_tag
-
-    def mutate_feature_window(self):
-        """LV.6 特征参数进化"""
+    # LV.6 ----------------------------------------------------------------------------
+    def __mutate_feature_window(self):
+        """LV.6 特征参数进化 - window"""
 
         mutation_tag = False
 
@@ -472,7 +936,7 @@ class Terminal(Tools):
                 else:
                     start, end = None, None
 
-                new_window = self.mutate_value(window, start_value=start, end_value=end, sep=sep)
+                new_window = Tools.mutate_value(window, start_value=start, end_value=end, sep=sep)
                 self.node_data['class_kw']['window'] = new_window
 
                 print('lv.6 mutation: feature window changed.')
@@ -480,70 +944,225 @@ class Terminal(Tools):
 
         return mutation_tag
 
+    # LV.6 ----------------------------------------------------------------------------
+    def __mutate_feature_decrease_num(self):
+
+        decreased = False
+
+        feature_num = self.node_data['feature_num']
+        sep = self.node_data['feature_num_range']['sep']
+
+        if random.random() < self.terminal_pbs['popfeature_pb']:
+
+            pop_num = random.choice(list(range(feature_num)))
+            self.node_data['class_args_features_ins'].pop(pop_num)
+            self.node_data['class_args_features'].pop(pop_num)
+            # instance = self.node_data['class_args_features_ins'][pop_num]  # 巨坑提示：要从内存清除列表容器中的实例，务必走这几步
+            # data = self.node_data['class_args_features'][pop_num]
+            # self.node_data['class_args_features_ins'].remove(instance)
+            # self.node_data['class_args_features'].remove(data)
+            # del instance
+            # del data
+            self.node_data['feature_num'] -= sep
+
+            decreased = True
+            print('lv.6 mutation: feature_num decreased.')
+
+        return decreased
+
+    # LV.6 ----------------------------------------------------------------------------
+    def __mutate_feature_increase_num(self):
+
+        increased = False
+
+        feature_num = self.node_data['feature_num']
+        sep = self.node_data['feature_num_range']['sep']
+
+        if random.random() < self.terminal_pbs['addfeature_pb']:
+            
+            refeature_pb_each = self.terminal_pbs['refeature_pb']  # 特殊556
+            indicator = self.node_data['class_args_features_ins'][0].__class__
+            instance = indicator(df_source=self.df_source, refeature_pb=refeature_pb_each)
+            add_num = random.choice(list(range(feature_num)))
+
+            self.node_data['class_args_features_ins'].insert(add_num, instance)
+            self.node_data['class_args_features'].insert(add_num, instance.cal())
+            del instance
+
+            self.node_data['feature_num'] += sep
+
+            increased = True
+            print('lv.6 mutation: feature_num increased.')
+
+        return increased
+
+    # LV.7 ----------------------------------------------------------------------------
+    def __mutate_feature_param_from_dict(self):
+
+        feature_changed = False
+
+        for name, instance in self.node_data['class_kw_ins'].items():
+            if isinstance(instance, Indicator):
+
+                mut_flag = instance.mutate_args()  
+                if mut_flag:
+                    self.node_data['class_kw'][name] = instance.cal()  # get new feature data
+
+                    feature_changed = True
+                    print('lv.7 mutation: class_kw instance changed.')
+
+        return feature_changed
+
+    # LV.7 ----------------------------------------------------------------------------
+    def __mutate_feature_param_from_list(self):
+
+        feature_changed = False
+        
+        for num in range(len(self.node_data['class_args_features_ins'])):
+
+            instance = self.node_data['class_args_features_ins'][num]
+            mut_flag = instance.mutate_args()
+
+            if mut_flag:
+                # old_data = self.node_data['class_args_features'][num]
+                self.node_data['class_args_features'][num] = instance.cal()
+                # del old_data  # not sure if the Series has been deleted from memory.
+
+                feature_changed = True
+                print('lv.7 mutation: class_args feature changed.')
+
+        return feature_changed
+
     # ------------------------------------------------------------------------------------------------------------------
-    def get_args(self, strip=True):
+    
+    def mutate_mapping_list(self):
+        """LV.4 MUTATION: 特征分类赋值进化
+        @return: True for any mutation happened for mapping_list(and classify_args)
+        NOTE: inplace. all pb are independent. Error if node_data['class_args_edges'] contains other than edges.
+        """
 
-        node_data = self.node_data.copy()
+        mutation_tag = False
+        edge_list = self.node_data['class_args_edges']  # 分类的切割点边界值 
+        map_type = self.node_data['map_type']
+        func_group = self.node_data['class_func_group']
 
-        if strip:
-            for key, value in node_data.items():
-                if isinstance(value, pd.Series):
-                    node_data[key] = self.node_data[key].copy()  # value包含默认浅拷贝的，要深拷贝，才不影响源数据。下同。
-                    node_data[key] = pd.Series()  # value直接是sereis的，其实不用。保险起见。
-                elif isinstance(value, list):
-                    node_data[key] = self.node_data[key].copy()
-                    n = 0
-                    while n < len(value):
-                        if isinstance(value[n], pd.Series):
-                            node_data[key][n] = pd.Series()  # 清空。同上下
-                        n += 1
-                elif isinstance(value, dict):
-                    for key2, value2 in value.items():
-                        if isinstance(value2, pd.Series):
-                            node_data[key][key2] = self.node_data[key][key2].copy()
-                            node_data[key][key2] = pd.Series()
+        # if func_group == 'permutation' or func_group == 'trend':  # 综合考虑，将reverse作为所有类别都可能发生的lv4.map_value变异
+        if 'reverse_pb' in self.terminal_pbs and random.random() < self.terminal_pbs['reverse_pb']:
 
-        return node_data
+            if self.node_data['value_reverse'] is False:
+                self.node_data['value_reverse'] = True  # 这个指示标，生效1次后就会被更改
 
-    def copy(self):
-        pass
+            mutation_tag = True
+            print('lv.4 mutation: map reversed')
+
+        if func_group == 'cut' or func_group == 'compare':
+
+            if map_type == 'multiplier':
+
+                # 增强类型的数据，只进行整体赋值的更改
+                if 'remul_pb' in self.terminal_pbs and self.terminal_pbs['remul_pb']:
+                    remuled = self.__mutate_mapping_list_multiplier()
+                    if remuled:
+                        print('lv.4 mutation: multiplier_zoom reset.')
+                        mutation_tag = True
+
+            elif map_type == 'vector' or map_type == 'condition':
+
+                # 注意，mutation的5项的顺序是有考虑的，且完成一个到下一个，不要随意改变先后次序或合并
+                # 1. mapping_list 连续同值合并【优化】 --merge_pb
+                if 'merge_pb' in self.terminal_pbs and self.terminal_pbs['merge_pb']:
+                    if len(edge_list) > 1:
+                        merged = self.__mutate_mapping_list_merge_same()
+                        if merged:
+                            mutation_tag = True
+                            print('lv.4 mutation: mapping_list merged.')
+
+                # 2. mapping_list 跳值平滑【优化】  --smooth_pb
+                if 'smooth_pb' in self.terminal_pbs and self.terminal_pbs['smooth_pb']:
+                    if map_type == 'vector':
+                        smoothed = self.__mutate_mapping_list_jump_smooth()
+                        if smoothed:
+                            mutation_tag = True
+                            print('lv.4 mutation: mapping_list smoothed.')
+
+                # 3. mapping_list 同值间异类剔除【半优化】  --clear_pb
+                if 'clear_pb' in self.terminal_pbs and self.terminal_pbs['clear_pb']:
+                    cleared = self.__mutate_mapping_list_clear_between()
+                    if cleared:
+                        mutation_tag = True
+                        print('lv.4 mutation: mapping_list cleared.')
+
+                # 4. mapping_list 数目增加 --cut_pb
+                if 'cut_pb' in self.terminal_pbs and self.terminal_pbs['cut_pb']:
+                    cut = self.__mutate_mapping_list_cut_within()
+                    if cut:
+                        mutation_tag = True
+                        print('lv.4 mutation: mapping_list cut.')
+
+                # 5. mapping_list 赋值变异 --revalue_pb  (这一步才是这个函数正儿八经最应该做的事情）
+                if 'revalue_pb' in self.terminal_pbs and self.terminal_pbs['revalue_pb']:
+                    changed = self.__mutate_mapping_list_change_value()
+                    if changed:
+                        mutation_tag = True
+                        print('lv.4 mutation: mapping_list value_changed.')
+    
+        return mutation_tag
+
+    def mutate_edge(self):
+        """LV.5 MUTATION: 特征分类截取进化函数，对edge的值和数量进行优化"""
+
+        # TODO: test
+
+        mutation_tag = False
+        map_type = self.node_data['map_type']
+
+        if map_type == 'vector' or map_type == 'condition':
+
+            # 1. edge 太近删除
+            if 'pop_pb' in self.terminal_pbs and self.terminal_pbs['pop_pb']:
+                poped = self.__mutate_edge_pop()
+                if poped:
+                    mutation_tag = True
+                    print('lv.5 mutation: class_edge poped.')
+
+            # 2. edge 太远插入
+            if 'insert_pb' in self.terminal_pbs and self.terminal_pbs['insert_pb']:
+                inserted = self.__mutate_edge_insert()
+                if inserted:
+                    mutation_tag = True
+                    print('lv.5 mutation: class_edge inserted.')
+
+            # 3. edge 切割点移动
+            if 'move_pb' in self.terminal_pbs and self.terminal_pbs['move_pb']:
+                moved = self.__mutate_edge_move()
+                if moved:
+                    mutation_tag = True
+                    print('lv.5 mutation: class_edge moved.')
+
+        elif map_type == 'multiplier':
+
+            edge_num = len(self.node_data['class_args_edges'])
+            if 'pop_pb' in self.terminal_pbs and random.random() < self.terminal_pbs['pop_pb']:
+                edge_num -= 1
+
+            if 'insert_pb' in self.terminal_pbs and random.random() < self.terminal_pbs['insert_pb']:
+                edge_num += 1
+
+            if 'move_pb' in self.terminal_pbs:
+                moved = self.__mutate_edge_move()
+                if moved:
+                    print('lv.5 mutation: edge moved.')
+                    mutation_tag = True
+
+            num_change = self.__mutate_edge_mult_change(edge_num)
+            if num_change:
+
+                mutation_tag = True
+
+        return mutation_tag
 
     # ------------------------------------------------------------------------------------------------------------------
     def create_terminal(self):
-        """
-        general:
-
-            map_type
-            # class_data
-            class_func
-            class_func_group
-            # class_args: cut_edges / features
-            
-        cut or compare:
-            class_args_edges
-            map_value_list
-            edge_mut_range
-            edge_mut_range_keep
-            edge_num_range
-            feature_window_ratio_range
-            # class_args_mutable
-            # class_edge_sep
-            # class_zoom_long
-            # class_zom_short
-            class_kw
-            # class_kw_sep
-            class_kw_range
-            class_kw_ins
-            multiplier_range
-            multiplier_ref
-
-        perm or trend:
-            value_reverse
-            feature_num_range
-            feature_num
-            class_args_features
-            class_args_features_ins
-        """
         
         indicator = self.__get_indicator()
         class_func = self.__get_classifier_function(indicator)
@@ -583,7 +1202,7 @@ class Terminal(Tools):
             for kw in kwarg_list:
                 if kw[:7] == 'feature':
                     feature_num += 1
-            refeature_pb_each = self.probability_each(object_num=feature_num, pb_for_all=self.terminal_pbs['refeature_pb'])
+            refeature_pb_each = Tools.probability_each(object_num=feature_num, pb_for_all=self.terminal_pbs['refeature_pb'])
 
             for kw in kwarg_list:
 
@@ -621,7 +1240,7 @@ class Terminal(Tools):
             feature_num = int(np.random.choice(np.arange(start, end, sep)))
             self.node_data['feature_num'] = feature_num
             
-            # refeature_pb_each = self.probability_each(object_num=feature_num,
+            # refeature_pb_each = Tools.probability_each(object_num=feature_num,
             #                                           pb_for_all=self.terminal_pbs['refeature_pb'])
             refeature_pb_each = self.terminal_pbs['refeature_pb']  # 特殊556
 
@@ -637,8 +1256,34 @@ class Terminal(Tools):
         self.mapped_data = self.cal()
 
         return self.mapped_data
+    
 
+    def get_args(self, strip=True):
 
+        node_data = self.node_data.copy()
+
+        if strip:
+            for key, value in node_data.items():
+                if isinstance(value, pd.Series):
+                    node_data[key] = self.node_data[key].copy()  # value包含默认浅拷贝的，要深拷贝，才不影响源数据。下同。
+                    node_data[key] = pd.Series()  # value直接是sereis的，其实不用。保险起见。
+                elif isinstance(value, list):
+                    node_data[key] = self.node_data[key].copy()
+                    n = 0
+                    while n < len(value):
+                        if isinstance(value[n], pd.Series):
+                            node_data[key][n] = pd.Series()  # 清空。同上下
+                        n += 1
+                elif isinstance(value, dict):
+                    for key2, value2 in value.items():
+                        if isinstance(value2, pd.Series):
+                            node_data[key][key2] = self.node_data[key][key2].copy()
+                            node_data[key][key2] = pd.Series()
+
+        return node_data
+
+    def copy(self):
+        pass
     def add_score(self, score):
         pass
 
@@ -651,37 +1296,23 @@ class Terminal(Tools):
 
         mutation_tag = False  # TODO: implement this
 
+        lv4_mut_map_value = self.mutate_mapping_list()  # LV.4 特征分类赋值进化
+        if lv4_mut_map_value:
+            mutation_tag = True
+
         map_type = self.node_data['map_type']
         func_group = self.node_data['class_func_group']
 
         if func_group == 'cut' or func_group == 'compare':
 
-            lv4_mut_map_value = self.mutate_mapping_list()  # LV.4 特征分类赋值进化
             lv5_mut_edge = self.mutate_edge()  # LV.5 特征分类截取进化
-            lv6_mut_window = self.mutate_feature_window()  # LV.6 特征进化-window
+            lv6_mut_window = self.__mutate_feature_window()  # LV.6 特征进化-window
+            lv7_mut_feature = self.__mutate_feature_param_from_dict()  # LV.7 feature计算参数进化
 
-            lv6_mut_feature = False
-            for name, instance in self.node_data['class_kw_ins'].items():
-                if isinstance(instance, Indicator):
-                    mut_flag = instance.mutate_args()  # LV.6 特征进化
-                    if mut_flag:
-                        self.node_data['class_kw'][name] = instance.cal()  # get new feature data
-                        print('lv.7 mutation: class_kw instance changed.')
-                        lv6_mut_feature = True
-
-            if lv4_mut_map_value | lv5_mut_edge | lv6_mut_window | lv6_mut_feature:
+            if lv5_mut_edge | lv6_mut_window | lv7_mut_feature:
                 mutation_tag = True
 
         elif func_group == 'permutation' or func_group == 'trend':
-
-            # lv.4
-            if random.random() < self.terminal_pbs['reverse_pb']:
-                if self.node_data['value_reverse'] is True:
-                    self.node_data['value_reverse'] = False
-                else:
-                    self.node_data['value_reverse'] = True
-                mutation_tag = True
-                print('lv.4 mutation: map reversed')
 
             keep_range = self.node_data['feature_num_range']['keep']
             feature_num_max = self.node_data['feature_num_range']['end']
@@ -689,48 +1320,19 @@ class Terminal(Tools):
             sep = self.node_data['feature_num_range']['sep']  # 就是1
             feature_num = self.node_data['feature_num']
 
-            # 1. lv.6 减少feature数量
-            if not keep_range or self.if_in_range(feature_num - sep, feature_num_min, feature_num_max):
-                if random.random() < self.terminal_pbs['popfeature_pb']:
-
-                    pop_num = random.choice(list(range(feature_num)))
-                    self.node_data['class_args_features_ins'].pop(pop_num)
-                    self.node_data['class_args_features'].pop(pop_num)
-                    # instance = self.node_data['class_args_features_ins'][pop_num]  # 巨坑提示：要从内存清除列表容器中的实例，务必走这几步
-                    # data = self.node_data['class_args_features'][pop_num]
-                    # self.node_data['class_args_features_ins'].remove(instance)
-                    # self.node_data['class_args_features'].remove(data)
-                    # del instance
-                    # del data
-                    self.node_data['feature_num'] -= sep
-                    print('lv.6 mutation: feature_num decreased.')
-
-            # 2. lv.6 增加feature数量
-            if not keep_range or self.if_in_range(feature_num + sep, feature_num_min, feature_num_max):
-                if random.random() < self.terminal_pbs['addfeature_pb']:
-                    
-                    refeature_pb_each = self.terminal_pbs['refeature_pb']  # 特殊556
-                    indicator = self.node_data['class_args_features_ins'][0].__class__
-                    instance = indicator(df_source=self.df_source, refeature_pb=refeature_pb_each)
-                    add_num = random.choice(list(range(feature_num)))
-
-                    self.node_data['class_args_features_ins'].insert(add_num, instance)
-                    self.node_data['class_args_features'].insert(add_num, instance.cal())
-                    del instance
-
-                    self.node_data['feature_num'] += sep
-                    print('lv.6 mutation: feature_num increased.')
-
-            # 3. lv.7 改变feature计算参数
-            for num in range(len(self.node_data['class_args_features_ins'])):
-                instance = self.node_data['class_args_features_ins'][num]
-                mut_flag = instance.mutate_args()
-                if mut_flag:
-                    old_data = self.node_data['class_args_features'][num]
-                    self.node_data['class_args_features'][num] = instance.cal()
-                    del old_data
-                    print('lv.7 mutation: class_args feature changed.')
+            if not keep_range or Tools.if_in_range(feature_num - sep, feature_num_min, feature_num_max):  # TODO: if_in_range 这个方式好，其他地方也用
+                decreased = self.__mutate_feature_decrease_num()  # lv.6 减少feature数量
+                if decreased:
                     mutation_tag = True
+
+            if not keep_range or Tools.if_in_range(feature_num + sep, feature_num_min, feature_num_max):
+                increased = self.__mutate_feature_increase_num()  # lv.6 增加feature数量
+                if increased:
+                    mutation_tag = True
+
+            lv7_mut_feature = self.__mutate_feature_param_from_list()  # lv.7 改变feature计算参数
+            if lv7_mut_feature:
+                mutation_tag = True
 
         return mutation_tag
 
@@ -745,8 +1347,7 @@ class Terminal(Tools):
             kwargs = self.node_data['class_kw']
 
             self.class_data = func(*args, **kwargs)
-            self.mapped_data = self.get_mapped_data(self.class_data,
-                                                    map_value_list=self.node_data['map_value_list'])
+            self.mapped_data = self.__get_mapped_data()
 
         elif func_group == 'permutation' or func_group == 'trend':
 
@@ -754,10 +1355,7 @@ class Terminal(Tools):
             args = self.node_data['class_args_features']
 
             self.class_data = func(*args)
-            self.mapped_data = self.get_mapped_data(self.class_data,
-                                                    reverse=self.node_data['value_reverse'],
-                                                    reverse_type=self.node_data['map_type'])
-            self.mapped_data = self.class_data
+            self.mapped_data = self.__get_mapped_data()
 
         return self.mapped_data
 
