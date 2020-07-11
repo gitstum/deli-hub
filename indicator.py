@@ -39,7 +39,7 @@ class Indicator(Tools):
 
 
 
-    def __init__(self, *, df_source, arg_range=None, refeature_pb=0.07):
+    def __init__(self, *, df_source, kwargs=None, arg_range=None, refeature_pb=0.07):
 
         self.name = self.get_id(self.name)  # feature_ID
         self.result = pd.Series()   # indicator 计算出来的data 储存在这里
@@ -50,11 +50,14 @@ class Indicator(Tools):
             arg_range = self.default_range
         self.arg_range = arg_range  # 自动变异的范围
 
+        if kwargs:
+            self.kwargs = kwargs  # 导入既有参数
+        else:
+            self.kwargs = self.__generate_random_args()  # 主函数除df外所需全部数据
+
         self.score_list = []  # 得分相关记录
         self.score_num = 0
         self.avg_score = 0
-
-        self.kwargs = self.__generate_random_args()  # 主函数除df外所需全部数据
 
         self.refeature_pb = refeature_pb
         self.pb_each = self.__calculate_pb_each(refeature_pb)  # 变异概率
@@ -120,9 +123,11 @@ class Indicator(Tools):
     def get_avg_score(self):
         return self.avg_score  # 获取分数统计信息
 
-    @staticmethod
-    def get_indicator_mutable_dimension_num(arg_range):
+    def get_indicator_mutable_dimension_num(self, arg_range=None):
         """indicator中可变异的参数的维度（根据columns数量决定）。"""
+
+        if not arg_range:
+            arg_range = self.default_range
 
         num = 0
         for value in arg_range.values():
@@ -136,7 +141,8 @@ class Indicator(Tools):
     # ------------------------------------------------------------------------------------------------------------------
     def copy(self):
 
-        new_ins = self.__class__(df_source=self.df_source, arg_range=self.arg_range, refeature_pb=self.refeature_pb)
+        new_ins = self.__class__(df_source=self.df_source, kwargs=self.kwargs, 
+                                 arg_range=self.arg_range, refeature_pb=self.refeature_pb)
         new_ins.__dict__ = self.__dict__.copy()
         new_ins.__dict__['kwargs'] = self.__dict__['kwargs'].copy()  # 注意这里，需要深拷贝的数据，要单独写一下
         new_ins.name = self.get_id('%s' % self.name.split('_')[0])
@@ -146,7 +152,7 @@ class Indicator(Tools):
     # ------------------------------------------------------------------------------------------------------------------
 
     def random_start(self):
-        """用于完成突变，并返还计算结果"""
+        """用于系统生成参数的初次计算，或中途完成突变。返还计算结果"""
 
         kwargs = self.__generate_random_args()  # 初始化时已经随机选取了
         result = self.cal(**kwargs)

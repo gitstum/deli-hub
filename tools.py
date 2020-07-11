@@ -310,6 +310,23 @@ class Tools(object):
         else:
             return False
 
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def if_in_range(value, start=None, end=None, include=True):
+
+        if include:
+            if start <= value <= end:
+                return True
+            else:
+                return False
+        else:
+            if start < value < end:
+                return True
+            else:
+                return False
+
+
     # 模型 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     # -----------------------------------------------------------------------------------------------------------------
@@ -412,7 +429,7 @@ class Tools(object):
             print('error 4765')
             return value  # 暂不支持其他类别变异
 
-        if sep is None:
+        if sep is None or sep is True:
             # 20：主观设定，按 5% 自动计算步长。
             # 整数value的自动步长，要求value不能低于11，否则将sep将为0，无法逆转 [已解决]
             # 最大的缺点在于，对于数值大的value，sep也大，因此很难长期保持 --整体使得value的变异有变小的倾向
@@ -797,17 +814,34 @@ class Tools(object):
 
     # LV.4 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def get_mapped_data(class_data, map_value_list):
+    def get_mapped_data(class_data, *, map_value_list=None, reverse=False, reverse_type='vector'):
         """condition、multiplier 类别不需要经过这个函数"""
 
         mapped_data = class_data.copy()
 
-        num = 0
-        for value in map_value_list:
-            mapped_data[mapped_data == num] = value
-            num += 1
+        if map_value_list:
+            
+            num = 0
+            for value in map_value_list:
+                mapped_data[mapped_data == num] = value
+                num += 1
+            # return mapped_data  # 对于cut、compare系列，到这里就结束了
 
-        return mapped_data  # not inplace. node_map 中并不保持分类映射后的数据，降低内存压力
+        if reverse:
+
+            ref_data = mapped_data.copy()
+            if reverse_type == 'vector':
+                mapped_data = ref_data * -1
+            elif reverse_type == 'condition':
+                mapped_data = ref_data * 0
+                mapped_data[ref_data == 0] = 1
+            elif reverse_type == 'multiplier':
+                pass
+
+        return mapped_data
+
+
+
 
     # LV.4 ------------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -839,7 +873,7 @@ class Tools(object):
                 new_value = 1
 
         elif map_type == ('multiplier' or 'mult'):
-            pass
+            new_value = value  # 交给geomspace函数重新切割就好
 
         return new_value
 
@@ -852,7 +886,7 @@ class Tools(object):
             - 'map_value_list': the LIST to get mutated.
             - 'map_type': to direct the mutation.
             - 'class_args_edges': to be changed if any mutation happened on mapping_list.
-        @param revalue_pb: probability of any  mutation happened.
+        @param revalue_pb: probability of any mutation happened.
         @param jump_pb:
         @param merge_pb: probability of merging 2(or more) same value into 1 value.
         @param cut_pb: probability of cutting 1 value into 2. ('class_args_edges' cut at random distance)
@@ -876,35 +910,35 @@ class Tools(object):
             merged = Tools.mutate_mapping_list_merge_same(node_data, merge_pb=merge_pb)
             if merged:
                 mutation_tag = True
-                print('mapping_list: merged')
+                print('lv.4 mutation: mapping_list merged.')
 
         # 2. mapping_list 跳值平滑【优化】  --smooth_pb
         if map_type == 'vector' and smooth_pb:
             smoothed = Tools.mutate_mapping_list_jump_smooth(node_data, smooth_pb=smooth_pb)
             if smoothed:
                 mutation_tag = True
-                print('mapping_list: smoothed')
+                print('lv.4 mutation: mapping_list smoothed.')
 
         # 3. mapping_list 同值间异类剔除【半优化】  --clear_pb
         if clear_pb:
             cleared = Tools.mutate_mapping_list_clear_between(node_data, clear_pb=clear_pb)
             if cleared:
                 mutation_tag = True
-                print('mapping_list: cleared')
+                print('lv.4 mutation: mapping_list cleared.')
 
         # 4. mapping_list 数目增加 --cut_pb
         if cut_pb:
             cut = Tools.mutate_mapping_list_cut_within(node_data, cut_pb=cut_pb)
             if cut:
                 mutation_tag = True
-                print('mapping_list: cut')
+                print('lv.4 mutation: mapping_list cut.')
 
         # 5. mapping_list 赋值变异 --revalue_pb  (这一步才是这个函数正儿八经最应该做的事情）
         if revalue_pb:
             changed = Tools.mutate_mapping_list_change_value(node_data, revalue_pb=revalue_pb, jump_pb=jump_pb)
             if changed:
                 mutation_tag = True
-                print('mapping_list: value_changed')
+                print('lv.4 mutation: mapping_list value_changed.')
 
         return mutation_tag
 
@@ -934,7 +968,7 @@ class Tools(object):
 
     # LV.4 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def mutate_mapping_list_cut_within(node_data, *, cut_pb, add_zoom_mul=1.5):
+    def mutate_mapping_list_cut_within(node_data, *, cut_pb, border_zoom_mul=1.5):
         """mapping_list 数目增加：通过将某段赋值切开（但赋值仍相同）
 
         注：这个功能在LV.5 中有重复，且更科学（所以这里的概率设置低一些）
@@ -946,8 +980,8 @@ class Tools(object):
 
         mapping_list_new = node_data['map_value_list'].copy()
         zoom_of_sep = node_data['edge_mut_range']['sep']
-        zoom_short_edge = node_data['edge_mut_range']['too_short']
-        zoom_at_border = zoom_short_edge * add_zoom_mul  # 如新增在两端，用此确定切割的edge值
+        zoom_short_edge = node_data['edge_mut_range']['too_short']  # TODO: debug too_short = None
+        zoom_at_border = zoom_short_edge * border_zoom_mul  # 如新增在两端，用此确定切割的edge值
         if zoom_short_edge < zoom_of_sep * 3:
             zoom_short_edge = zoom_of_sep * 3  # 切割两端都需要至少（可等于）保留一个sep，故3
 
@@ -973,7 +1007,7 @@ class Tools(object):
                     edge_after = edge_list_new[i + add_num]
                     cut_zoom = abs(edge_after - edge_before)
                     if cut_zoom < zoom_short_edge:
-                        print('zoom too short, no cut within. issue: 1965')
+                        # print('zoom too short, no cut within. issue: 1965')
                         new_edge = None
                     else:
                         cut_zoom = cut_zoom - 2 * zoom_of_sep  # 保留sep后的真实可切割空间
@@ -1180,14 +1214,14 @@ class Tools(object):
 
     # LV.5 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def mutate_edge(node_data, *, move_pb, pop_pb, insert_pb, add_zoom_mul=1.5, **kwargs):
+    def mutate_edge(node_data, *, move_pb, pop_pb, insert_pb, zoom_distance_mul=1.5, **kwargs):
         """LV.5 MUTATION: 特征分类截取进化函数，对edge的值和数量进行优化
 
         @param node_data: 节点字典数据
         @param move_pb: 有至少一个edge发生移动的概率
         @param pop_pb: 当edge之间太近时，剔除分类的概率
         @param insert_pb: 当edge之间距离太远时，插入分类的概率
-        @param add_zoom_mul: 当edge之间距离太远、插入分类时，后与原区间边界保持的距离（sep倍数）
+        @param zoom_distance_mul: 当edge之间距离太远、插入分类时，后与原区间边界保持的距离（sep倍数）
         @return: True for any change happened.
         """
 
@@ -1198,14 +1232,14 @@ class Tools(object):
             poped = Tools.mutate_edge_pop(node_data, pop_pb=pop_pb)
             if poped:
                 mutation_tag = True
-                print('class_edge: poped.')
+                print('lv.5 mutation: class_edge poped.')
 
         # 2. edge 太远插入
         if insert_pb:
-            inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, add_zoom_mul=add_zoom_mul)
+            inserted = Tools.mutate_edge_insert(node_data, insert_pb=insert_pb, zoom_distance_mul=zoom_distance_mul)
             if inserted:
                 mutation_tag = True
-                print('class_edge: inserted.')
+                print('lv.5 mutation: class_edge inserted.')
 
 
         # 3. edge 切割点移动
@@ -1213,7 +1247,7 @@ class Tools(object):
             moved = Tools.mutate_edge_move(node_data, move_pb=move_pb)
             if moved:
                 mutation_tag = True
-                print('class_edge: moved.')
+                print('lv.5 mutation: class_edge moved.')
 
         return mutation_tag
 
@@ -1246,7 +1280,7 @@ class Tools(object):
 
     # LV.5 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def mutate_edge_insert(node_data, *, insert_pb, add_zoom_mul=1.5):
+    def mutate_edge_insert(node_data, *, insert_pb, zoom_distance_mul=1.5):
         """切割边界变异：太远了，插入"""
 
         edge_list = node_data['class_args_edges']
@@ -1255,7 +1289,7 @@ class Tools(object):
         mapping_list_new = node_data['map_value_list'].copy()
 
         long_edge = node_data['edge_mut_range']['too_long']
-        zoom_distance_edge = node_data['edge_mut_range']['too_short'] * add_zoom_mul
+        zoom_distance_edge = node_data['edge_mut_range']['too_short'] * zoom_distance_mul
         zoom_of_sep = node_data['edge_mut_range']['sep']
         map_type = node_data['map_type']
 
@@ -1355,7 +1389,7 @@ class Tools(object):
 
     # LV.6 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def mutate_feature(node_data, *, kw_pb=0.1, refeature_pb=0.1, mul=1.5, **kwargs):
+    def mutate_feature_window(node_data, *, window_pb=0.1, mul=1.5, **kwargs):
         """LV.6 特征参数进化"""
 
         # 1. mutate kwargs of the classifier function which is not feature data.
@@ -1371,12 +1405,12 @@ class Tools(object):
             key_list.append(key)
             sep_list.append(value)
 
-        kw_pb_each = Tools.probability_each(object_num=len(key_list), pb_for_all=kw_pb)
+        window_pb_each = Tools.probability_each(object_num=len(key_list), pb_for_all=window_pb)
 
         class_mut_flag = False
         for key, sep in zip(key_list, sep_list):
 
-            if random.random() < kw_pb_each:
+            if random.random() < window_pb_each:
 
                 old_value = node_data['class_kw'][key]
 
@@ -1397,8 +1431,6 @@ class Tools(object):
                     print('class_kw: "%s" value mutated.' % key)
 
         # 2. mutate feature
-
-        
 
         # 字典结构的旧方法
 
@@ -1456,7 +1488,7 @@ class Tools(object):
         #                 feature_mut_flag = True
         #                 print('feature_args for %s: %s value mutated.' % (func, param_name))
 
-        return class_mut_flag, feature_mut_flag
+        return class_mut_flag # , feature_mut_flag
 
     # terminal 生成函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # ------------------------------------------------------------------------------------------------------------------
@@ -1496,11 +1528,11 @@ class Tools(object):
         for num in list(range(len(sub_edge))):
             df_result['diff_tag'][df_result['difference'] >= sub_edge[num]] = num + 1
 
-        class_index = list(range(len(sub_edge) + 1))
+        # class_index = list(range(len(sub_edge) + 1))
 
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['diff_tag'], class_index
+        return df_result['diff_tag']  # , class_index
 
     # compare 分类序列生成 ----------------------------------------------------------------------------------------------
     @staticmethod
@@ -1538,11 +1570,11 @@ class Tools(object):
         for num in list(range(len(sigma_edge))):
             df_result['diff_tag'][df_result['sigma_ratio'] >= sigma_edge[num]] = num + 1
 
-        class_index = list(range(len(sigma_edge) + 1))
+        # class_index = list(range(len(sigma_edge) + 1))
 
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['diff_tag'], class_index
+        return df_result['diff_tag']  # , class_index
 
     # cut 分类序列生成 --------------------------------------------------------------------------------------------------
     @staticmethod
@@ -1564,9 +1596,9 @@ class Tools(object):
         for num in list(range(len(cut_points))):
             df_result['cut'][df_result['data'] >= cut_points[num]] = num + 1
 
-        class_index = list(range(len(cut_points) + 1))
+        # class_index = list(range(len(cut_points) + 1))
 
-        return df_result['cut'], class_index
+        return df_result['cut']  # , class_index
 
     # cut 分类序列生成 --------------------------------------------------------------------------------------------------
     @staticmethod
@@ -1600,11 +1632,11 @@ class Tools(object):
             df_result['cut'][df_result['data'] > df_result['cut_ref']] = num + 1
             num += 1
 
-        class_index = list(range(num + 1))
+        # class_index = list(range(num + 1))
 
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['cut'], class_index
+        return df_result['cut']  # , class_index
 
     # cut 分类序列生成 --------------------------------------------------------------------------------------------------
     @staticmethod
@@ -1635,11 +1667,11 @@ class Tools(object):
             df_result['cut'][df_result['data'] > df_result['cut_ref']] = num + 1
             num += 1
 
-        class_index = list(range(num + 1))
+        # class_index = list(range(num + 1))
 
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['cut'], class_index
+        return df_result['cut']  # , class_index
 
     # cut 分类序列生成 --------------------------------------------------------------------------------------------------
     @staticmethod
@@ -1683,11 +1715,11 @@ class Tools(object):
             num_up += 1
             # num_down -= 1
 
-        class_index = list(range(num_up + 1))
+        # class_index = list(range(num_up + 1))
 
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return df_result['cut'], class_index
+        return df_result['cut']  # , class_index
 
     # branch 构造函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # -----------------------------------------------------------------------------------------------------------------
@@ -2141,6 +2173,7 @@ class Tools(object):
 
         note: old function name: sig_one_direction
         """
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
 
         df_trend = Tools.sig_delta(*signals)
         trend_signals = Tools.df_to_series(df_trend)
@@ -2151,6 +2184,8 @@ class Tools(object):
         df_sig['result_sig'] = 0
         df_sig['result_sig'][df_sig['result_ref'] > 0] = 1  # NOTE ">=" can't be set here
         df_sig['result_sig'][df_sig['result_ref'] < 0] = -1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
         return df_sig['result_sig']
 
@@ -2171,6 +2206,8 @@ class Tools(object):
         # if len(signals) < 3:
         #     return np.nan
 
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
         df_sig = Tools.sig_merge(*signals)
 
         df_sig['sig_start'] = df_sig.iloc[:, 0]
@@ -2187,6 +2224,8 @@ class Tools(object):
         result_sig[df_sig['result_ref'] > 0] = 1
         result_sig[df_sig['result_ref'] < 0] = -1
 
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+
         return result_sig
 
     # 多项合并函数 permutation ------------------------------------------------------------------------------------------
@@ -2199,12 +2238,16 @@ class Tools(object):
         @return: signal: 0/1
         """
 
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
         result_ref = Tools.sig_trend_strict(*signals)
 
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
         df_sig['result_sig'] = 0
         df_sig['result_sig'][df_sig['result_ref'] > 0] = 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
         return df_sig['result_sig']
 
@@ -2218,12 +2261,16 @@ class Tools(object):
         @return: signal: 0/1
         """
 
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
         result_ref = Tools.sig_trend_strict(*signals)
 
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
         df_sig['result_sig'] = 0
         df_sig['result_sig'][df_sig['result_ref'] < 0] = 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
         return df_sig['result_sig']
 
@@ -2237,12 +2284,16 @@ class Tools(object):
         @return: signal: 0/1
         """
 
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
         result_ref = Tools.sig_trend_start_end(*signals)
 
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
         df_sig['result_sig'] = 0
         df_sig['result_sig'][df_sig['result_ref'] > 0] = 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
         return df_sig['result_sig']
 
@@ -2256,12 +2307,16 @@ class Tools(object):
         @return: signal: 0/1
         """
 
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+
         result_ref = Tools.sig_trend_start_end(*signals)
 
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
         df_sig['result_sig'] = 0
         df_sig['result_sig'][df_sig['result_ref'] < 0] = 1
+
+        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
         return df_sig['result_sig']
 
