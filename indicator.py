@@ -37,8 +37,6 @@ class Indicator(Tools):
     score_num = 0
     avg_score = 0
 
-
-
     def __init__(self, *, df_source, kwargs=None, arg_range=None, refeature_pb=0.07):
 
         self.name = self.get_id(self.name)  # feature_ID
@@ -123,11 +121,12 @@ class Indicator(Tools):
     def get_avg_score(self):
         return self.avg_score  # 获取分数统计信息
 
-    def get_indicator_mutable_dimension_num(self, arg_range=None):
+    @classmethod
+    def get_indicator_mutable_dimension_num(cls, arg_range=None):
         """indicator中可变异的参数的维度（根据columns数量决定）。"""
 
         if not arg_range:
-            arg_range = self.default_range
+            arg_range = cls.default_range
 
         num = 0
         for value in arg_range.values():
