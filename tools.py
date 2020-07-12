@@ -313,18 +313,44 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def if_in_range(value, start=None, end=None, include=True):
+    def if_in_range(value, start=None, end=None, include_ends=True):
 
-        if include:
-            if start <= value <= end:
-                return True
+        if include_ends:
+            if start and end:
+                if start <= value <= end:
+                    return True
+                else:
+                    return False
+            elif start:
+                if start <= value:
+                    return True
+                else:
+                    return False
+            elif end:
+                if value <= end:
+                    return True
+                else:
+                    return False
             else:
-                return False
+                return True
         else:
-            if start < value < end:
-                return True
+            if start and end:
+                if start < value < end:
+                    return True
+                else:
+                    return False
+            elif start:
+                if start < value:
+                    return True
+                else:
+                    return False
+            elif end:
+                if value < end:
+                    return True
+                else:
+                    return False
             else:
-                return False
+                return True
 
 
     # 模型 相关函数 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -457,7 +483,7 @@ class Tools(object):
         num = 0
         while new_value == value:
 
-            if num > 30:
+            if num > 20:
                 if random.random() < 0.5:
                     new_value = value - sep
                 else:
@@ -2173,7 +2199,6 @@ class Tools(object):
 
         note: old function name: sig_one_direction
         """
-        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
 
         df_trend = Tools.sig_delta(*signals)
         trend_signals = Tools.df_to_series(df_trend)
@@ -2182,9 +2207,10 @@ class Tools(object):
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
         df_sig['result_sig'] = 0
+
+        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
         df_sig['result_sig'][df_sig['result_ref'] > 0] = 1  # NOTE ">=" can't be set here
         df_sig['result_sig'][df_sig['result_ref'] < 0] = -1
-
         pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
         return df_sig['result_sig']
