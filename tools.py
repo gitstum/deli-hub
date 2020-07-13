@@ -4,10 +4,10 @@ import datetime
 import pandas as pd
 import numpy as np
 import random
+import psutil
+import multiprocessing as mp
 
 import empyrical
-
-import multiprocessing as mp
 
 from constant import *
 
@@ -79,15 +79,50 @@ class Tools(object):
     # -----------------------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def shorten_float(number, keep_float):
+    def memory_free(unit='GB'):
+        mem_available = psutil.virtual_memory().available
+
+        if unit == 'GB':
+            divi = 1024 ** 3
+        elif unit == 'MB':
+            divi = 1024 ** 2
+        elif unit == 'KB':
+            divi = 1024
+        else:
+            raise ValueError('unit "%s" not accepted. Please use BG/MB/KB instead.' % unit)
+        
+        return round(mem_available / unit, 6)
+    
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def memory_of(variable, unit='GB'):
+
+        if unit == 'GB':
+            divi = 1024 ** 3
+        elif unit == 'MB':
+            divi = 1024 ** 2
+        elif unit == 'KB':
+            divi = 1024
+        else:
+            raise ValueError('unit "%s" not accepted. Please use BG/MB/KB instead.' % unit)
+
+        return round(variable.__sizeof__() / divi, 6)
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def shorten_float(number, keep_float=None):
         """float简化：保留小数点后x位
         @param number: 要化简的数
         @param keep_float: 要保留的小数位
         @return: 化简后的数
         """
 
-        number = int(number * 10 ** keep_float)
-        number = number / 10 ** keep_float
+        # number = int(number * 10 ** keep_float)
+        # number = number / 10 ** keep_float
+
+        number = round(number, keep_float)
 
         return number
 
