@@ -150,6 +150,8 @@ class Terminal(Tools):
             if isinstance(start, float):
                 keep_float = len(str(start).split('.')[1]) + 1
                 sep = self.shorten_float(sep, keep_float)
+                if sep < 0.001:
+                    sep = 0.001  # 防止 sep==0 的情况出现
             else:
                 sep = int(sep)
 
@@ -232,7 +234,7 @@ class Terminal(Tools):
                 if key == 'class_args_edges':
                     value.sort()  # 这个特殊，记得要排序一下！
 
-                self.node_data['key'] = value
+                self.node_data[key] = value
                 updated = True
 
         # 旧方法：
@@ -341,7 +343,7 @@ class Terminal(Tools):
             map_reversed = self.__mutate_mapping_list_reverse()
             if map_reversed:
                 mutation_tag = True
-                print('lv.4 mutation: map reversed')
+                print('lv.4 mutation: map reversed.')
 
 
         return mutation_tag
@@ -377,8 +379,6 @@ class Terminal(Tools):
     # LV.4 -----------------------------------------------------------------------------
     def __get_mapped_data(self):
         """映射函数"""
-
-        # TODO: test it.
 
         class_data = self.class_data.copy()
         mapped_data = class_data.copy()
@@ -680,8 +680,6 @@ class Terminal(Tools):
     def mutate_edge(self):
         """LV.5 MUTATION: 特征分类截取进化函数，对edge的值和数量进行优化"""
 
-        # TODO: test
-
         mutation_tag = False
         map_type = self.node_data['map_type']
         now_num = len(self.node_data['map_value_list'])
@@ -929,7 +927,7 @@ class Terminal(Tools):
                     edge_sep = int(edge_sep)
 
             choice_box = np.arange(edge_min + edge_sep, edge_max, edge_sep)
-            if not choice_box:
+            if not list(choice_box):
                 return False
 
             new_edge = np.random.choice(choice_box)
@@ -1211,8 +1209,6 @@ class Terminal(Tools):
         pass
 
     def mutate_args(self):
-
-        # TODO: test.
 
         mutation_tag = False
 
