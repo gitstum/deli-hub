@@ -91,7 +91,7 @@ class Tools(object):
         else:
             raise ValueError('unit "%s" not accepted. Please use BG/MB/KB instead.' % unit)
         
-        return round(mem_available / unit, 6)
+        return round(mem_available / divi, 6)
     
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -762,15 +762,11 @@ class Tools(object):
         NOTE: inplace.
         """
 
-        node_type = node_data['node_type']
-        if node_type == ('cond' or 'condition'):
-            return False  # condition类不计算权重
-
         weight = node_data['weight']
 
         if random.random() < reweight_pb:
             node_data['weight'] = Tools.mutate_value(weight, sep=sep, mul=2)
-            print('weight: changed.')
+            print('lv.2 mutation: weight changed.')
             return True
 
         else:
@@ -778,82 +774,8 @@ class Tools(object):
 
     # LV.3 ------------------------------------------------------------------------------------------------------------
     @staticmethod
-    def get_lv3_methods():
-        """node method / merge method"""
-
-        lv3_method = dict(cond_1=Tools.cond_1,
-                          cond_2=Tools.cond_2,
-
-                          mult_simple=Tools.mult_simple,
-                          mult_same=Tools.mult_same,
-                          mult_abs=Tools.mult_abs,
-                          divi_simple=Tools.divi_simple,
-                          divi_same=Tools.divi_same,
-                          divi_abs=Tools.divi_abs,
-
-                          comb_sum=Tools.comb_sum,
-                          comb_vote0=Tools.comb_vote0,
-                          comb_vote1=Tools.comb_vote1,
-                          comb_vote2=Tools.comb_vote2,
-                          comb_vote3=Tools.comb_vote3,
-                          comb_min=Tools.comb_min,
-
-                          perm_add=Tools.perm_add,
-                          perm_sub=Tools.perm_sub,
-                          perm_up=Tools.perm_up,
-                          perm_down=Tools.perm_down,
-                          sig_trend_strict=Tools.sig_trend_strict,
-                          sig_trend_loose=Tools.sig_trend_loose,
-                          sig_trend_start_end=Tools.sig_trend_start_end
-                          )
-
-        return lv3_method
-
-    # LV.3 ------------------------------------------------------------------------------------------------------------
-    @staticmethod
     def mutate_node_function(node_data, *, refunc_pb, cross_refunc_pb):
-        """LV.3 MUTATION: 信号合并函数进化"""
-
-        func = node_data['node_function']
-        new_func = None
-
-        # 1. 类型改变。  --在改变类型后，传参约束条件会“变宽”，所以下列映射有方向性，是不可逆的。
-
-        cross_exchange_dict = {Tools.mult_simple: Tools.mult_abs,  # 在simple有意义的情况下，计算结果不会有变化
-                               Tools.divi_simple: Tools.divi_abs,  # 同上
-                               Tools.mult_same: Tools.cond_2,  # 计算有意义区间相同，结果应该是相近的
-                               Tools.divi_same: Tools.cond_3,  # 同上
-                               }  # 这里只是随意打通一点，让“意外”发生，考虑不是太周全
-        
-        if func in cross_exchange_dict.keys():
-            if random.random < cross_refunc_pb:
-                new_func = cross_exchange_dict[func]
-
-        # 2. 同类互换。
-
-        # 可互换的函数分类（没有重叠，函数不会同时处在不同分类。下方pb_each计算的基础）
-        exchange_dict = {'comb': [Tools.comb_sum, Tools.comb_min,
-                                  Tools.comb_vote0, Tools.comb_vote1, Tools.comb_vote2, Tools.comb_vote3],
-                         'perm': [Tools.perm_add, Tools.perm_up, Tools.perm_sub, Tools.perm_down],
-                         'trend': [Tools.sig_trend_strict, Tools.sig_trend_loose, Tools.sig_trend_start_end],
-                         '0/1': [Tools.cond_1, Tools.mult_simple, Tools.divi_simple],  # same rules for args
-                         'mult': [Tools.cond_2, Tools.mult_same, Tools.mult_abs, Tools.divi_same, Tools.divi_abs]
-                         }
-
-        for method_list in exchange_dict.values():
-            if func in method_list:
-
-                method_list.remove(func)  # 每次都会重写exchange_dict，所以这里不用copy()
-                if random.random() < refunc_pb:
-                    target_num = random.randint(0, len(method_list) - 1)  # 不能同时有多个变异项（不独立），所以用这种方法
-                    new_func = method_list[target_num]   # 如发生同类互换，会覆盖上方类型改变的结果。
-
-        if new_func:
-            node_data['node_function'] = new_func
-            print('LV.3 function mutated.')
-            return True     
-        else:
-            return False
+        pass
 
     # LV.4-5 ----------------------------------------------------------------------------------------------------------
     @staticmethod
@@ -900,8 +822,6 @@ class Tools(object):
                 pass
 
         return mapped_data
-
-
 
 
     # LV.4 ------------------------------------------------------------------------------------------------------------
@@ -2053,12 +1973,12 @@ class Tools(object):
 
         if method == 'comb_sum':
             return Tools.comb_sum(*signals)
-        elif method == 'comb_vote1':
-            return Tools.comb_vote1(*signals)
-        elif method == 'comb_vote2':
-            return Tools.comb_vote2(*signals)
-        elif method == 'comb_vote3':
-            return Tools.comb_vote3(*signals)
+        elif method == 'comb_vote_1':
+            return Tools.comb_vote_1(*signals)
+        elif method == 'comb_vote_2':
+            return Tools.comb_vote_2(*signals)
+        elif method == 'comb_vote_3':
+            return Tools.comb_vote_3(*signals)
         elif method == 'comb_min':
             return Tools.comb_min(*signals)
 
@@ -2094,7 +2014,7 @@ class Tools(object):
 
     # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
-    def comb_vote0(*signals):
+    def comb_vote_0(*signals):
         """引用各列signal，按-1,0,1赋值（消除weight和小数点）再加和，输出为：-1/0/1"""
 
         df_sig = Tools.sig_merge(*signals)
@@ -2107,8 +2027,8 @@ class Tools(object):
 
     # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
-    def comb_vote1(*signals):
-        """Pos_should signal merge method: comb_vote1  
+    def comb_vote_1(*signals):
+        """Pos_should signal merge method: comb_vote_1  
         ---使用各列signal投票，加和，输出为：-1/0/1
 
         @param signals: pos_should signals Series (weighted)
@@ -2128,8 +2048,8 @@ class Tools(object):
 
     # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
-    def comb_vote2(*signals):
-        """Pos_should signal merge method: comb_vote2  
+    def comb_vote_2(*signals):
+        """Pos_should signal merge method: comb_vote_2  
         ---使用各列signal投票，须无反对票，输出为：-1/0/1
 
         @param signals: pos_should signals Series (weighted)
@@ -2151,8 +2071,8 @@ class Tools(object):
 
     # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
-    def comb_vote3(*signals):
-        """Pos_should signal merge method: comb_vote3  
+    def comb_vote_3(*signals):
+        """Pos_should signal merge method: comb_vote_3  
         ---使用各列signal投票，须全票通过，输出为：-1/0/1
 
         @param signals: pos_should signals Series (weighted)
