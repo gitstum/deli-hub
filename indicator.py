@@ -37,8 +37,6 @@ class Indicator(Tools):
     score_num = 0
     avg_score = 0
 
-
-
     def __init__(self, *, df_source, kwargs=None, arg_range=None, refeature_pb=0.07):
 
         self.name = self.get_id(self.name)  # feature_ID
@@ -61,6 +59,10 @@ class Indicator(Tools):
 
         self.refeature_pb = refeature_pb
         self.pb_each = self.__calculate_pb_each(refeature_pb)  # 变异概率
+
+    def __del__(self):
+        print('instance deleted: ', self)
+        pass
 
     def __generate_random_args(self):
         """随机生成主函数的一组参数  --除了df，都放到kwargs里面来"""
@@ -123,11 +125,12 @@ class Indicator(Tools):
     def get_avg_score(self):
         return self.avg_score  # 获取分数统计信息
 
-    def get_indicator_mutable_dimension_num(self, arg_range=None):
+    @classmethod
+    def get_indicator_mutable_dimension_num(cls, arg_range=None):
         """indicator中可变异的参数的维度（根据columns数量决定）。"""
 
         if not arg_range:
-            arg_range = self.default_range
+            arg_range = cls.default_range
 
         num = 0
         for value in arg_range.values():
@@ -144,8 +147,8 @@ class Indicator(Tools):
         new_ins = self.__class__(df_source=self.df_source, kwargs=self.kwargs, 
                                  arg_range=self.arg_range, refeature_pb=self.refeature_pb)
         new_ins.__dict__ = self.__dict__.copy()
-        new_ins.__dict__['kwargs'] = self.__dict__['kwargs'].copy()  # 注意这里，需要深拷贝的数据，要单独写一下
         new_ins.name = self.get_id('%s' % self.name.split('_')[0])
+        new_ins.__dict__['kwargs'] = self.__dict__['kwargs'].copy()  # 注意这里，需要深拷贝的数据，要单独写一下
 
         return new_ins
 
@@ -174,7 +177,7 @@ class Indicator(Tools):
         self.score_num += 1
         Indicator.score_num += 1
 
-    def mutate_args(self, mul=3.0, refeature_pb=None, update=True):
+    def mutate_feature(self, mul=3.0, refeature_pb=None, update=True):
         """渐变变异函数"""
 
         mut_flag = False
