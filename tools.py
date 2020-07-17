@@ -1723,10 +1723,23 @@ class Tools(object):
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
 
-        cond.name = 'condition'
-        pos_should.name = 'signal'
+        # cond.name = 'condition'
+        # pos_should.name = 'signal'
+        # df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
+        df_sig = Tools.sig_merge(pos_should, cond)
 
-        df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
+        try:
+            df_sig.columns = ['condition', 'signal']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
+        except ValueError as e:
+            time.sleep(5)
+            print('Thank God, pandas.concat made mistake again.', e)
+            name = Tools.get_id('error')
+            # df_sig.to_csv('error/%s_df.csv' % name)
+            # result = Tools.cond_1(pos_should, cond)  # 时不时会产生额外的column。pd本身的bug。
+            return
+
+        # print(df_sig)  # debug
+
         df_sig['result_sig'] = df_sig['signal']
         df_sig['result_sig'][df_sig['condition'] <= 0] = 0
 
@@ -1758,7 +1771,7 @@ class Tools(object):
 
     # 增强、削弱函数 -----------------------------------------------------------------------------------------------------
     @staticmethod
-    def sigmoid(x, coefficient=2):
+    def sigmoid(x, coefficient=2.0):
         """增幅限制函数"""
 
         s = coefficient / (1 + np.exp(-x / coefficient))
@@ -1771,10 +1784,23 @@ class Tools(object):
 
         适用于一方是0/1类型，另一方-1/0/1类型，强化后者。如两个都是vector，将无法解释结果符号。"""
 
-        vector_arr.name = 'vector_arr'
-        abs_arr.name = 'abs_arr'
+        # vector_arr.name = 'vector_arr'
+        # abs_arr.name = 'abs_arr'
+        # df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
+        df_mult = Tools.sig_merge(vector_arr, abs_arr)
 
-        df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
+        try:
+            df_mult.columns = ['vector_arr', 'abs_arr']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
+        except ValueError as e:
+            time.sleep(5)
+            print('Thank God, pandas.concat made mistake again.', e)
+            name = Tools.get_id('error')
+            # df_mult.to_csv('error/%s_df.csv' % name)
+            # result = Tools.mult_simple(vector_arr, abs_arr, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
+            return
+
+        # print(df_mult)  # debug
+
         df_mult['ref'] = df_mult['abs_arr'] * df_mult['vector_arr']
         df_mult['result'] = df_mult['ref'].rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
 
@@ -1785,9 +1811,22 @@ class Tools(object):
     def mult_same(arr1, arr2, coefficient=1.7):
         """增强函数：同向增强  --同方向时：保留符号，计算相乘结果；其他：0 """
 
-        arr1.name = 'arr1'
-        arr2.name = 'arr2'
-        df_mult = pd.concat([arr1, arr2], axis=1, sort=False).fillna(method='ffill')  # 为了应对不同时间周期的arr数据
+        # arr1.name = 'arr1'
+        # arr2.name = 'arr2'
+        # df_mult = pd.concat([arr1, arr2], axis=1, sort=False).fillna(method='ffill')  # 为了应对不同时间周期的arr数据
+        df_mult = Tools.sig_merge(arr1, arr2)
+
+        try:
+            df_mult.columns = ['arr1', 'arr2']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
+        except ValueError as e:
+            time.sleep(5)
+            print('Thank God, pandas.concat made mistake again.', e)
+            name = Tools.get_id('error')
+            # df_mult.to_csv('error/%s_df.csv' % name)
+            # result = Tools.mult_same(arr1, arr2, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
+            return
+
+        # print(df_mult)  # debug
 
         arr1_abs = df_mult['arr1'].abs()
         arr2_abs = df_mult['arr2'].abs()
@@ -1809,9 +1848,22 @@ class Tools(object):
     def mult_abs(main_arr, affect_arr, coefficient=1.7):
         """增强函数：绝对增强  --主sig和副sig的绝对值相乘，改变主sig的幅度，不改变方向。"""
 
-        main_arr.name = 'main'
-        affect_arr.name = 'effect'
-        df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
+        # main_arr.name = 'main'
+        # affect_arr.name = 'effect'
+        # df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
+        df_mult = Tools.sig_merge(main_arr, affect_arr)
+
+        try:
+            df_mult.columns = ['main', 'effect']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
+        except ValueError as e:
+            time.sleep(5)
+            print('Thank God, pandas.concat made mistake again.', e)
+            name = Tools.get_id('error')
+            # df_mult.to_csv('error/%s_df.csv' % name)
+            # result = Tools.mult_abs(main_arr, affect_arr, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
+            return
+
+        # print(df_mult)  # debug
 
         effect_abs = df_mult['effect'].abs()
         ref_arr = df_mult['main'] * effect_abs
@@ -1827,10 +1879,23 @@ class Tools(object):
 
         适用于一方是0/1类型，另一方-1/0/1类型，强化后者。如两个都是vector，将无法解释结果符号。"""
 
-        vector_arr.name = 'vector_arr'
-        abs_arr.name = 'abs_arr'
+        # vector_arr.name = 'vector_arr'
+        # abs_arr.name = 'abs_arr'
+        # df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
+        df_mult = Tools.sig_merge(vector_arr, abs_arr)
 
-        df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
+        try:
+            df_mult.columns = ['vector_arr', 'abs_arr']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
+        except ValueError as e:
+            time.sleep(5)
+            print('Thank God, pandas.concat made mistake again.', e)
+            name = Tools.get_id('error')
+            # df_mult.to_csv('error/%s_df.csv' % name)
+            # result = Tools.divi_simple(vector_arr, abs_arr, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
+            return
+        
+        # print(df_mult)  # debug
+
         ref_arr = df_mult['vector_arr'] / df_mult['abs_arr']
         # 避免接近0时的消极影响：
         restrict_arr = df_mult['vector_arr'].abs().rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
@@ -1845,9 +1910,22 @@ class Tools(object):
     def divi_same(dividend, divisor, coefficient=1.5):
         """削弱函数：同向削弱  --同方向时：保留符号，计算相除结果，且尽可能不超过dividend；其他：0 """
 
-        dividend.name = 'dividend'  # 被除数
-        divisor.name = 'divisor'
-        df_mult = pd.concat([dividend, divisor], axis=1, sort=False).fillna(method='ffill')
+        # dividend.name = 'dividend'  # 被除数
+        # divisor.name = 'divisor'
+        # df_mult = pd.concat([dividend, divisor], axis=1, sort=False).fillna(method='ffill')
+        df_mult = Tools.sig_merge(dividend, divisor)
+        
+        try:
+            df_mult.columns = ['dividend', 'divisor']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
+        except ValueError as e:
+            time.sleep(5)
+            print('Thank God, pandas.concat made mistake again.', e)
+            name = Tools.get_id('error')
+            # df_mult.to_csv('error/%s_df.csv' % name)
+            # result = Tools.divi_same(dividend, divisor, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
+            return
+
+        # print(df_mult)  # debug
 
         dividend_abs = df_mult['dividend'].abs()
         divisor_abs = df_mult['divisor'].abs()
@@ -1872,11 +1950,24 @@ class Tools(object):
         """削弱函数：绝对削弱  --主sig处以副sig的绝对值，改变主sig的幅度，不改变方向。且尽可能不超过主sig。
         （当 affect_arr > 0 时，和 divi_simple 相同？"""
 
-        main_arr.name = 'main'
-        affect_arr.name = 'effect'
-        df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
+        # main_arr.name = 'main'
+        # affect_arr.name = 'affect'
+        # df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
+        df_mult = Tools.sig_merge(main_arr, affect_arr)
 
-        effect_abs = df_mult['effect'].abs()
+        try:
+            df_mult.columns = ['main', 'affect']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
+        except ValueError as e:
+            time.sleep(5)
+            print('Thank God, pandas.concat made mistake again.', e)
+            name = Tools.get_id('error')
+            # df_mult.to_csv('error/%s_df.csv' % name)
+            # result = Tools.divi_abs(main_arr, affect_arr, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
+            return
+
+        # print(df_mult)  # debug
+
+        effect_abs = df_mult['affect'].abs()
         # effect_abs = effect_abs.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
         ref_arr = df_mult['main'] / effect_abs
         restrict_arr = df_mult['main'].abs().rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
@@ -1951,51 +2042,51 @@ class Tools(object):
         return tuple(list_series)
 
     # 多项合并函数 ------------------------------------------------------------------------------------------------------
-    @staticmethod
-    def sig_to_one(method, *signals):
-        """分流函数
-
-        @param method: method for merging signals into one
-        @param signals: pos_should signals Series(weighted)f
-        @return: pos_should signal
-        """
-
-        if not method in Method.ALL_NAME.value:
-            print("Can't find method '%s' in constant.Method." % method)
-            return pd.DataFrame()
-
-        # debug
-        # for i in signals:
-        #     print(type(i))
-        #     print(i)
-        #     print('-' * 10)
-        # print('-' * 20)
-
-        if method == 'comb_sum':
-            return Tools.comb_sum(*signals)
-        elif method == 'comb_vote_1':
-            return Tools.comb_vote_1(*signals)
-        elif method == 'comb_vote_2':
-            return Tools.comb_vote_2(*signals)
-        elif method == 'comb_vote_3':
-            return Tools.comb_vote_3(*signals)
-        elif method == 'comb_min':
-            return Tools.comb_min(*signals)
-
-        # elif method == 'cond_2':
-        #     return Tools.cond_2(*signals)
-        elif method == 'perm_add':
-            return Tools.perm_add(*signals)
-        elif method == 'perm_sub':
-            return Tools.perm_sub(*signals)
-        elif method == 'perm_up':
-            return Tools.perm_up(*signals)
-        elif method == 'perm_down':
-            return Tools.perm_down(*signals)
-
-        else:
-            print('No method assigned in staticmethod sig_to_one()')
-            return pd.DataFrame()
+    # @staticmethod
+    # def sig_to_one(method, *signals):
+    #     """分流函数
+    #
+    #     @param method: method for merging signals into one
+    #     @param signals: pos_should signals Series(weighted)f
+    #     @return: pos_should signal
+    #     """
+    #
+    #     if not method in Method.ALL_NAME.value:
+    #         print("Can't find method '%s' in constant.Method." % method)
+    #         return pd.DataFrame()
+    #
+    #     # debug
+    #     # for i in signals:
+    #     #     print(type(i))
+    #     #     print(i)
+    #     #     print('-' * 10)
+    #     # print('-' * 20)
+    #
+    #     if method == 'comb_sum':
+    #         return Tools.comb_sum(*signals)
+    #     elif method == 'comb_vote_1':
+    #         return Tools.comb_vote_1(*signals)
+    #     elif method == 'comb_vote_2':
+    #         return Tools.comb_vote_2(*signals)
+    #     elif method == 'comb_vote_3':
+    #         return Tools.comb_vote_3(*signals)
+    #     elif method == 'comb_min':
+    #         return Tools.comb_min(*signals)
+    #
+    #     # elif method == 'cond_2':
+    #     #     return Tools.cond_2(*signals)
+    #     elif method == 'perm_add':
+    #         return Tools.perm_add(*signals)
+    #     elif method == 'perm_sub':
+    #         return Tools.perm_sub(*signals)
+    #     elif method == 'perm_up':
+    #         return Tools.perm_up(*signals)
+    #     elif method == 'perm_down':
+    #         return Tools.perm_down(*signals)
+    #
+    #     else:
+    #         print('No method assigned in staticmethod sig_to_one()')
+    #         return pd.DataFrame()
 
     # 多项合并函数 combination ------------------------------------------------------------------------------------------
     @staticmethod
@@ -2171,43 +2262,43 @@ class Tools(object):
         return df_sig['result_sig']
 
     # 多项合并函数 trend ------------------------------------------------------------------------------------------------
-    @staticmethod
-    def sig_trend_start_end(*signals):
-        """Check each df line to see if values (in each signal) eventually(start vs. end) goes up/down
+    # @staticmethod
+    # def sig_trend_start_end(*signals):
+    #     """Check each df line to see if values (in each signal) eventually(start vs. end) goes up/down
 
-        @param signals: Series
-        @return:
-            -1: signals go down eventually but not straight
-            1: signals go up eventually but not straight
-            0: other situations: even, straight
+    #     @param signals: Series
+    #     @return:
+    #         -1: signals go down eventually but not straight
+    #         1: signals go up eventually but not straight
+    #         0: other situations: even, straight
 
 
-        """
+    #     """
 
-        # if len(signals) < 3:
-        #     return np.nan
+    #     # if len(signals) < 3:
+    #     #     return np.nan
 
-        pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
+    #     pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
 
-        df_sig = Tools.sig_merge(*signals)
+    #     df_sig = Tools.sig_merge(*signals)
 
-        df_sig['sig_start'] = df_sig.iloc[:, 0]
-        df_sig['sig_end'] = df_sig.iloc[:, -2]  # -2: cause 'sig_start' became -1 
-        df_sig['direction'] = df_sig['sig_end'] - df_sig['sig_start']
+    #     df_sig['sig_start'] = df_sig.iloc[:, 0]
+    #     df_sig['sig_end'] = df_sig.iloc[:, -2]  # -2: cause 'sig_start' became -1 
+    #     df_sig['direction'] = df_sig['sig_end'] - df_sig['sig_start']
 
-        result_ref = Tools.sig_trend_strict(*signals)
-        df_sig['one_direction'] = result_ref
+    #     result_ref = Tools.sig_trend_strict(*signals)
+    #     df_sig['one_direction'] = result_ref
 
-        df_sig['result_ref'] = df_sig['direction'][df_sig['one_direction'] == 0]
-        df_sig['result_sig'] = 0
+    #     df_sig['result_ref'] = df_sig['direction'][df_sig['one_direction'] == 0]
+    #     df_sig['result_sig'] = 0
 
-        result_sig = df_sig['result_sig'].copy()
-        result_sig[df_sig['result_ref'] > 0] = 1
-        result_sig[df_sig['result_ref'] < 0] = -1
+    #     result_sig = df_sig['result_sig'].copy()
+    #     result_sig[df_sig['result_ref'] > 0] = 1
+    #     result_sig[df_sig['result_ref'] < 0] = -1
 
-        pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
+    #     pd.set_option('mode.chained_assignment', 'warn')  # reopen SettingWithCopyWarning
 
-        return result_sig
+    #     return result_sig
 
     # 多项合并函数 permutation ------------------------------------------------------------------------------------------
     @staticmethod
@@ -2267,10 +2358,13 @@ class Tools(object):
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
 
-        result_ref = Tools.sig_trend_start_end(*signals)
+        result_ref = Tools.sig_trend_loose(*signals)
 
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
+
+        # print(df_sig)  # debug
+
         df_sig['result_sig'] = 0
         df_sig['result_sig'][df_sig['result_ref'] > 0] = 1
 
@@ -2290,10 +2384,14 @@ class Tools(object):
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
 
-        result_ref = Tools.sig_trend_start_end(*signals)
+        result_ref = Tools.sig_trend_loose(*signals)
 
         result_ref.name = 'result_ref'
         df_sig = pd.DataFrame(result_ref)
+        # df_sig.columns = ['result_ref']
+
+        # print(df_sig)  # debug
+
         df_sig['result_sig'] = 0
         df_sig['result_sig'][df_sig['result_ref'] < 0] = 1
 
