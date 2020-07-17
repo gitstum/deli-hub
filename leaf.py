@@ -13,13 +13,13 @@ from private.parameters import Classifier
 
 
 class Terminal(Tools):
-
     name = 'terminal'
     score_list = []
     score_num = 0
     avg_score = 0
 
-    def __init__(self, *, df_source, terminal_pbs=None, classifier_map=None, classifier_group=None, node_data=None, lv_mut_tag=None):
+    def __init__(self, *, df_source, terminal_pbs=None, classifier_map=None, classifier_group=None, node_data=None,
+                 lv_mut_tag=None):
 
         self.name = self.get_id('terminal')
         self.score_list = []
@@ -1131,7 +1131,6 @@ class Terminal(Tools):
             else:
                 raise KeyError('Unknown keyword in class_function: %s. 9496' % self.node_data['class_func'])
 
-
     # -------------------------------------------------
     def __create_terminal_list(self, indicator, classifier_detail):
 
@@ -1160,7 +1159,6 @@ class Terminal(Tools):
             self.node_data['class_args_features_ins'].append(instance)
             self.node_data['class_args_features'].append(instance.cal())
 
-
     # ------------------------------------------------------------------------------------------------------------------
     def create_terminal(self):
         """create a random terminal."""
@@ -1171,7 +1169,7 @@ class Terminal(Tools):
 
         # class function
         self.node_data['class_func'] = class_func
-        
+
         # map_type
         map_type_box = set(indicator.map_type) & set(classifier_detail['map_type'])  # 取交集
         if not map_type_box:
@@ -1217,7 +1215,7 @@ class Terminal(Tools):
                 if isinstance(value, pd.Series):
                     node_data[key] = self.node_data[key].copy()  # value包含默认浅拷贝的，要深拷贝，才不影响源数据。下同。
                     node_data[key] = pd.Series()  # value直接是sereis的，其实不用。保险起见。
-                
+
                 elif isinstance(value, list):
                     node_data[key] = self.node_data[key].copy()
 
@@ -1226,7 +1224,7 @@ class Terminal(Tools):
                         if isinstance(value[n], pd.Series):
                             node_data[key][n] = pd.Series()  # 清空。同上下
                         n += 1
-                
+
                 elif isinstance(value, dict):
                     node_data[key] = self.node_data[key].copy()
 
@@ -1241,8 +1239,12 @@ class Terminal(Tools):
 
         # TODO: TEST it. 注意需要深度复制各个参数instance
 
-        new_instance = self.__class__(df_source=self.df_source, terminal_pbs=self.terminal_pbs, classifier_map=self.classifier_map,
-            classifier_group=self.classifier_group, node_data=self.node_data, lv_mut_tag=self.lv_mut_tag)
+        new_instance = self.__class__(df_source=self.df_source,
+                                      terminal_pbs=self.terminal_pbs,
+                                      classifier_map=self.classifier_map,
+                                      classifier_group=self.classifier_group,
+                                      node_data=self.node_data,
+                                      lv_mut_tag=self.lv_mut_tag)
 
         new_instance.__dict__ = self.__dict__.copy()
         new_instance.name = self.get_id('%s' % self.name.split('_')[0])
@@ -1261,7 +1263,7 @@ class Terminal(Tools):
         if new_node_data['class_kw_ins']:  # NOTE: feature数据是没有深拷贝的。按照使用习惯，cal之后重新赋值到 class_kw 中
             new_class_kw_ins = {}
             for key, instance in new_node_data['class_kw_ins'].items():
-                
+
                 if isinstance(instance, Indicator):
                     new_class_kw_ins[key] = instance.copy()
                 else:
@@ -1272,31 +1274,47 @@ class Terminal(Tools):
         return new_instance
 
     def add_score(self, score):
-        
+
         self.score_list.append(score)
 
         if self.node_data['class_args_features_ins']:
+            indicator_list = []
             for instance in self.node_data['class_args_features_ins']:
-                instance.add_score(score)
-
-        if self.node_data['class_kw_ins']:
-            for instance in self.node_data['class_kw_ins'].values():
-                if isinstance(instance, Indicator):
+                feature_class = instance.__class__  # 避免重复添加
+                if not feature_class in indicator_list:
+                    indicator_list.append(feature_class)
                     instance.add_score(score)
 
+        if self.node_data['class_kw_ins']:
+            indicator_list = []
+            for instance in self.node_data['class_kw_ins'].values():
+                if isinstance(instance, Indicator):
+                    feature_class = instance.__class__
+                    if not feature_class in indicator_list:
+                        indicator_list.append(feature_class)
+                        instance.add_score(score)
+
     def update_score(self, sortino_score):
-        
+
         self.avg_score = (self.avg_score * self.score_num + sortino_score) / (self.score_num + 1)
         self.score_num += 1
 
         if self.node_data['class_args_features_ins']:
+            indicator_list = []
             for instance in self.node_data['class_args_features_ins']:
-                instance.update_score(sortino_score)
+                feature_class = instance.__class__
+                if not feature_class in indicator_list:
+                    indicator_list.append(feature_class)
+                    instance.update_score(sortino_score)
 
         if self.node_data['class_kw_ins']:
+            indicator_list = []
             for instance in self.node_data['class_kw_ins'].values():
                 if isinstance(instance, Indicator):
-                    instance.update_score(sortino_score)
+                    feature_class = instance.__class__
+                    if not feature_class in indicator_list:
+                        indicator_list.append(feature_class)
+                        instance.update_score(sortino_score)
 
     def mutate_terminal(self):
 

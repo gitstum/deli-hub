@@ -61,7 +61,7 @@ class Indicator(Tools):
         self.pb_each = self.__calculate_pb_each(refeature_pb)  # 变异概率
 
     def __del__(self):
-        print('instance deleted: ', self)
+        # print('instance deleted: ', self)
         pass
 
     def __generate_random_args(self):
@@ -144,8 +144,11 @@ class Indicator(Tools):
     # ------------------------------------------------------------------------------------------------------------------
     def copy(self):
 
-        new_ins = self.__class__(df_source=self.df_source, kwargs=self.kwargs, 
-                                 arg_range=self.arg_range, refeature_pb=self.refeature_pb)
+        new_ins = self.__class__(df_source=self.df_source,
+                                 kwargs=self.kwargs,
+                                 arg_range=self.arg_range,
+                                 refeature_pb=self.refeature_pb)
+
         new_ins.__dict__ = self.__dict__.copy()
         new_ins.name = self.get_id('%s' % self.name.split('_')[0])
         new_ins.__dict__['kwargs'] = self.__dict__['kwargs'].copy()  # 注意这里，需要深拷贝的数据，要单独写一下
