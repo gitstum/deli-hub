@@ -296,6 +296,13 @@ class Primitive(Tools):
 
         return True
 
+    def mutate_offspring_num(self):
+
+        pass
+        return False
+
+    # ----------------------------------------------------------------------------------------------------------------------
+
     def create_primitive(self, terminal_child_only=False):
         """create a random primitive  --与terminal不同，这里是不会计算并返还结果的。"""
 
@@ -369,10 +376,11 @@ class Primitive(Tools):
 
         mutation_tag = False
 
+        self.lv_mut_tag[1] = self.mutate_offspring_num()
         self.lv_mut_tag[2] = Tools.mutate_weight(self.node_data, reweight_pb=self.primitive_pbs['reweight_pb'])
         self.lv_mut_tag[3] = self.__mutate_primitive_method()
 
-        if self.lv_mut_tag[2] or self.lv_mut_tag[3]:
+        if self.lv_mut_tag[1] or self.lv_mut_tag[2] or self.lv_mut_tag[3]:
             mutation_tag = True
 
         return mutation_tag
@@ -399,15 +407,16 @@ class Primitive(Tools):
                 # bug 处理
                 if isinstance(sig_series, pd.DataFrame):
                     print('ERROR: signal(node_result) should not be DataFrame. 654852')
+                    print('Where: ', self, self.node_data['inter_method'])
                     
                     if sig_series.shape[1] > 2:
-                        raise ValueError('signal has more than 2 columns.')
+                        raise ValueError('ERROR: signal has more than 2 columns. 75249')
 
                     sig_series.columns = ['a', 'b']
                     if sig_series[sig_series['a'] != sig_series['b']].shape[0] > 0:
-                        raise ValueError('signal columns are not the same')
-                    else:
-                        print('signal columns are the same')  # 出错的典型情况：Series变成两列的DataFrame
+                        raise ValueError('ERROR: signal columns are not the same. 95498')
+                    else:  # 出错的典型情况：Series变成两列的DataFrame
+                        print('Modify 654852: signal columns are the same, keep one.')
 
                         # do the modify
                         instance.node_result = sig_series['a'].copy()
@@ -418,6 +427,8 @@ class Primitive(Tools):
             self.primitive_result = func(*args)
             self.node_result = Tools.cal_weight(self.primitive_result, self.node_data['weight'])
 
+            print('c', end='; ')
+
         elif self.lv_mut_tag[2]:  # lv.2
 
             self.node_result = Tools.cal_weight(self.primitive_result, self.node_data['weight'])
@@ -425,8 +436,8 @@ class Primitive(Tools):
         for key in self.lv_mut_tag.keys():
             self.lv_mut_tag[key] = False  # reset mutation_tag
 
-        # 即使这里做了检验，但有的 node的node_result 还是莫名其妙是两列的DataFrame，且两列内容一样。猜测是python本身的bug。
-        if isinstance(self.node_data, pd.DataFrame):
+        # check datatype. 即使这里做了检验，但有的 node的node_result 还是莫名其妙是两列的DataFrame，且两列内容一样。猜测是python本身的bug。
+        if isinstance(self.node_result, pd.DataFrame):
             raise TypeError('ERROR: node_result should not be DataFrame.',
                             self, self.node_data['inter_method'], self.node_data['method_ins'])
 

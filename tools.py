@@ -1718,27 +1718,16 @@ class Tools(object):
         @param pos_should: pos_should signals Series (weighted)
         @return: pos_should signal
 
-        NOTE: 为了保持函数可互换性，遵照Tools.divi_simple的参数顺序
+        NOTE: 为了保持函数可互换性，遵照Tools.divi_simple的参数顺序，abs列放在后方。
         """
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
 
-        # cond.name = 'condition'
+        # cond.name = 'condition'  # 这种方式会修改函数外series的列名，已更换为下方处理方式。此处备份、备忘。
         # pos_should.name = 'signal'
-        # df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
-        df_sig = Tools.sig_merge(pos_should, cond)
 
-        try:
-            df_sig.columns = ['condition', 'signal']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
-        except ValueError as e:
-            time.sleep(5)
-            print('Thank God, pandas.concat made mistake again.', e)
-            name = Tools.get_id('error')
-            # df_sig.to_csv('error/%s_df.csv' % name)
-            # result = Tools.cond_1(pos_should, cond)  # 时不时会产生额外的column。pd本身的bug。
-            return
-
-        # print(df_sig)  # debug
+        df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
+        df_sig.columns = ['condition', 'signal']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
 
         df_sig['result_sig'] = df_sig['signal']
         df_sig['result_sig'][df_sig['condition'] <= 0] = 0
@@ -1761,9 +1750,13 @@ class Tools(object):
         """
 
         df_sig = pd.concat([cond, pos_should], axis=1, sort=False).fillna(method='ffill')
+        # df_sig.columns = ['cond', 'pos_should']
 
+        # bug备忘：如果传入的series里面有result_sig名字的，又没有重命名，会返回两列！
         df_sig['result_ref'] = df_sig.iloc[:, 0] * df_sig.iloc[:, 1]
-        df_sig['result_sig'] = df_sig.iloc[:, 1][df_sig['result_ref'] > 0]
+        df_sig['result_sig'] = df_sig.iloc[:, 1][df_sig['result_ref'] > 0]  # 这里有bug：可能计算了两列。
+        # df_sig['result_ref'] = df_sig['cond'] * df_sig['pos_should']
+        # df_sig['result_sig'] = df_sig['pos_should'][df_sig['result_ref'] > 0]
 
         result_sig = df_sig['result_sig'].fillna(0)
 
@@ -1784,22 +1777,8 @@ class Tools(object):
 
         适用于一方是0/1类型，另一方-1/0/1类型，强化后者。如两个都是vector，将无法解释结果符号。"""
 
-        # vector_arr.name = 'vector_arr'
-        # abs_arr.name = 'abs_arr'
-        # df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
-        df_mult = Tools.sig_merge(vector_arr, abs_arr)
-
-        try:
-            df_mult.columns = ['vector_arr', 'abs_arr']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
-        except ValueError as e:
-            time.sleep(5)
-            print('Thank God, pandas.concat made mistake again.', e)
-            name = Tools.get_id('error')
-            # df_mult.to_csv('error/%s_df.csv' % name)
-            # result = Tools.mult_simple(vector_arr, abs_arr, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
-            return
-
-        # print(df_mult)  # debug
+        df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
+        df_mult.columns = ['vector_arr', 'abs_arr']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
 
         df_mult['ref'] = df_mult['abs_arr'] * df_mult['vector_arr']
         df_mult['result'] = df_mult['ref'].rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
@@ -1811,22 +1790,8 @@ class Tools(object):
     def mult_same(arr1, arr2, coefficient=1.7):
         """增强函数：同向增强  --同方向时：保留符号，计算相乘结果；其他：0 """
 
-        # arr1.name = 'arr1'
-        # arr2.name = 'arr2'
-        # df_mult = pd.concat([arr1, arr2], axis=1, sort=False).fillna(method='ffill')  # 为了应对不同时间周期的arr数据
-        df_mult = Tools.sig_merge(arr1, arr2)
-
-        try:
-            df_mult.columns = ['arr1', 'arr2']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
-        except ValueError as e:
-            time.sleep(5)
-            print('Thank God, pandas.concat made mistake again.', e)
-            name = Tools.get_id('error')
-            # df_mult.to_csv('error/%s_df.csv' % name)
-            # result = Tools.mult_same(arr1, arr2, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
-            return
-
-        # print(df_mult)  # debug
+        df_mult = pd.concat([arr1, arr2], axis=1, sort=False).fillna(method='ffill')  # 为了应对不同时间周期的arr数据
+        df_mult.columns = ['arr1', 'arr2']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
 
         arr1_abs = df_mult['arr1'].abs()
         arr2_abs = df_mult['arr2'].abs()
@@ -1848,22 +1813,8 @@ class Tools(object):
     def mult_abs(main_arr, affect_arr, coefficient=1.7):
         """增强函数：绝对增强  --主sig和副sig的绝对值相乘，改变主sig的幅度，不改变方向。"""
 
-        # main_arr.name = 'main'
-        # affect_arr.name = 'effect'
-        # df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
-        df_mult = Tools.sig_merge(main_arr, affect_arr)
-
-        try:
-            df_mult.columns = ['main', 'effect']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
-        except ValueError as e:
-            time.sleep(5)
-            print('Thank God, pandas.concat made mistake again.', e)
-            name = Tools.get_id('error')
-            # df_mult.to_csv('error/%s_df.csv' % name)
-            # result = Tools.mult_abs(main_arr, affect_arr, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
-            return
-
-        # print(df_mult)  # debug
+        df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
+        df_mult.columns = ['main', 'effect']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
 
         effect_abs = df_mult['effect'].abs()
         ref_arr = df_mult['main'] * effect_abs
@@ -1879,22 +1830,8 @@ class Tools(object):
 
         适用于一方是0/1类型，另一方-1/0/1类型，强化后者。如两个都是vector，将无法解释结果符号。"""
 
-        # vector_arr.name = 'vector_arr'
-        # abs_arr.name = 'abs_arr'
-        # df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
-        df_mult = Tools.sig_merge(vector_arr, abs_arr)
-
-        try:
-            df_mult.columns = ['vector_arr', 'abs_arr']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
-        except ValueError as e:
-            time.sleep(5)
-            print('Thank God, pandas.concat made mistake again.', e)
-            name = Tools.get_id('error')
-            # df_mult.to_csv('error/%s_df.csv' % name)
-            # result = Tools.divi_simple(vector_arr, abs_arr, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
-            return
-        
-        # print(df_mult)  # debug
+        df_mult = pd.concat([vector_arr, abs_arr], axis=1, sort=False).fillna(method='ffill')
+        df_mult.columns = ['vector_arr', 'abs_arr']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
 
         ref_arr = df_mult['vector_arr'] / df_mult['abs_arr']
         # 避免接近0时的消极影响：
@@ -1910,22 +1847,8 @@ class Tools(object):
     def divi_same(dividend, divisor, coefficient=1.5):
         """削弱函数：同向削弱  --同方向时：保留符号，计算相除结果，且尽可能不超过dividend；其他：0 """
 
-        # dividend.name = 'dividend'  # 被除数
-        # divisor.name = 'divisor'
-        # df_mult = pd.concat([dividend, divisor], axis=1, sort=False).fillna(method='ffill')
-        df_mult = Tools.sig_merge(dividend, divisor)
-        
-        try:
-            df_mult.columns = ['dividend', 'divisor']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
-        except ValueError as e:
-            time.sleep(5)
-            print('Thank God, pandas.concat made mistake again.', e)
-            name = Tools.get_id('error')
-            # df_mult.to_csv('error/%s_df.csv' % name)
-            # result = Tools.divi_same(dividend, divisor, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
-            return
-
-        # print(df_mult)  # debug
+        df_mult = pd.concat([dividend, divisor], axis=1, sort=False).fillna(method='ffill')
+        df_mult.columns = ['dividend', 'divisor']  # 被除数，除数
 
         dividend_abs = df_mult['dividend'].abs()
         divisor_abs = df_mult['divisor'].abs()
@@ -1950,22 +1873,8 @@ class Tools(object):
         """削弱函数：绝对削弱  --主sig处以副sig的绝对值，改变主sig的幅度，不改变方向。且尽可能不超过主sig。
         （当 affect_arr > 0 时，和 divi_simple 相同？"""
 
-        # main_arr.name = 'main'
-        # affect_arr.name = 'affect'
-        # df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
-        df_mult = Tools.sig_merge(main_arr, affect_arr)
-
-        try:
-            df_mult.columns = ['main', 'affect']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
-        except ValueError as e:
-            time.sleep(5)
-            print('Thank God, pandas.concat made mistake again.', e)
-            name = Tools.get_id('error')
-            # df_mult.to_csv('error/%s_df.csv' % name)
-            # result = Tools.divi_abs(main_arr, affect_arr, coefficient=coefficient)  # 时不时会产生额外的column。pd本身的bug。
-            return
-
-        # print(df_mult)  # debug
+        df_mult = pd.concat([main_arr, affect_arr], axis=1, sort=False).fillna(method='ffill')
+        df_mult.columns = ['main', 'affect']  # 时不时会出现列名错误，这里纠正。pd本身的bug。
 
         effect_abs = df_mult['affect'].abs()
         # effect_abs = effect_abs.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
@@ -1988,18 +1897,11 @@ class Tools(object):
         @return:
         """
 
-        # print(signals)
-
         list_series = []
         for s in signals:
             list_series.append(s)
 
         df_sig = pd.concat(list_series, axis=1, sort=False).fillna(method='ffill')
-
-        # dev
-        # print('sig_merge()   -----------------------')
-        # print(type(df_sig))
-        # print(df_sig)
 
         return df_sig
 
