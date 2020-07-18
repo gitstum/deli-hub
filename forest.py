@@ -28,14 +28,8 @@ feature所属的indicator能够添加分数
 
 """
 
-# 存放node实例的分类的容器
-node_box = {
-    'all': [],
-    'pos_value': [],
-    'abs_value': [],
-}
 
-
+# ----------------------------------------------------------------------------------------------------------------------
 def add_node_to_box(node_box, node_instance):
     """根据 node 的数据类型（pos/abs）分类添加到 node_box
     NOTE:inplace.
@@ -46,6 +40,7 @@ def add_node_to_box(node_box, node_instance):
     node_box['all'].append(node_instance)
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def merge_note_box(*args):
     """将两个不同的node_box进行合并，并返还新的node_box。
     NOTE: not inplace
@@ -69,6 +64,7 @@ def merge_note_box(*args):
     return node_box
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def generate_leaves(terminal_num, *, df_source, node_box=None,
                     terminal_pbs=None, classifier_map=None, classifier_group=None):
     """随机生成指定数量的Terminal，返还填充后的 node_box
@@ -97,21 +93,29 @@ def generate_leaves(terminal_num, *, df_source, node_box=None,
             if n % 2000 == 0:
                 print('')
 
-    print('\n%s leaves generated.' % n)
+    print('Finish: %s leaves generated.' % n)
 
     return node_box
 
 
-def add_first_level_branchs(branch_num, *, df_source, node_box):
-    """"""
+# ----------------------------------------------------------------------------------------------------------------------
+def add_first_level_branchs(branch_num, *, df_source, node_box,
+                            terminal_pbs=None, classifier_map=None, classifier_group=None,
+                            intergrator_map=None, primitive_pbs=None, child_num_range=None):
+    """添加首层branch，子节点为terminal。"""
 
-
-    print('\nGenerate first level branches. counting:')
+    print('\nGenerate level 1 branches. counting:')
 
     if not node_box['pos_value'] or not node_box['abs_value']:
         print('node_box empty, generate more leaves.')
-        node_box = generate_leaves(2, df_source=df_source, node_box=node_box)
-        node_box = add_first_level_branchs(branch_num, df_source=df_source, node_box=node_box)
+        node_box = generate_leaves(2, df_source=df_source, node_box=node_box,
+                                   terminal_pbs=terminal_pbs, classifier_map=classifier_map,
+                                   classifier_group=classifier_group)
+        node_box = add_first_level_branchs(branch_num, df_source=df_source, node_box=node_box,
+                                           terminal_pbs=terminal_pbs, classifier_map=classifier_map,
+                                           classifier_group=classifier_group,
+                                           intergrator_map=intergrator_map, primitive_pbs=primitive_pbs,
+                                           child_num_range=child_num_range)
         return node_box
 
     lv1_node_box = {
@@ -133,19 +137,90 @@ def add_first_level_branchs(branch_num, *, df_source, node_box):
             if n % 2000 == 0:
                 print('')
 
-    print('\n%s first level branches generated.' % n)
+    print('Finish: %s level 1 branches generated.' % n)
 
     node_box = merge_note_box(node_box, lv1_node_box)
     return node_box
 
 
-def add_random_branchs(branch_num, *, node_box):
+# ----------------------------------------------------------------------------------------------------------------------
+def add_second_level_branch(branch_num, *, node_box,
+                            intergrator_map=None, primitive_pbs=None, child_num_range=None):
+    """添加第二代branch，子节点为terminal或首层branch"""
+
+    print('\nGenerate level 2 branches. counting:')
+
+    lv2_node_box = {
+        'all': [],
+        'pos_value': [],
+        'abs_value': [],
+    }
+
+    n = 0
+    while n < branch_num:
+        primitive = Primitive(node_box=node_box,
+                              intergrator_map=intergrator_map, primitive_pbs=primitive_pbs,
+                              child_num_range=child_num_range)
+        primitive.create_primitive()
+        primitive.cal()
+        add_node_to_box(lv2_node_box, primitive)
+        n += 1
+
+        if n % 100 == 0:
+            print(n, end=', ')
+            if n % 2000 == 0:
+                print('')
+
+    print('Finish: %s level 2 branches generated.' % n)
+
+    node_box = merge_note_box(node_box, lv2_node_box)
+    return node_box
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+def add_limit_depth_branch(branch_num, *, node_box, depth_limit=3,
+                           intergrator_map=None, primitive_pbs=None, child_num_range=None):
+    """随机添加branch，限定层级深度（depth）。"""
+
+    print('\nGenerate limit depth(%d) branches. counting:' % depth_limit)
+
+    n = 0
+    while n < branch_num:
+
+        primitive = Primitive(node_box=node_box,
+                              intergrator_map=intergrator_map, primitive_pbs=primitive_pbs,
+                              child_num_range=child_num_range)
+        primitive.create_primitive()
+        if primitive.depth > depth_limit:
+            continue
+
+        primitive.cal()
+        add_node_to_box(node_box, primitive)  # 生成10,000个节点大约需要3分钟
+        n += 1
+
+        if n % 100 == 0:
+            print(n, end=', ')
+            if n % 2000 == 0:
+                print('')
+
+    print('Finish: %s limit depth(%d) branches generated.' % (n, depth_limit))
+
+    return node_box
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+def add_random_branchs(branch_num, *, node_box,
+                       intergrator_map=None, primitive_pbs=None, child_num_range=None):
+    """随机添加branch，不做层数限制"""
+
     print('\nGenerate random branches. counting:')
 
     n = 0
     while n < branch_num:
 
-        primitive = Primitive(node_box=node_box)
+        primitive = Primitive(node_box=node_box,
+                              intergrator_map=intergrator_map, primitive_pbs=primitive_pbs,
+                              child_num_range=child_num_range)
         primitive.create_primitive()
         primitive.cal()
         add_node_to_box(node_box, primitive)  # 生成10,000个节点大约需要3分钟
@@ -156,17 +231,24 @@ def add_random_branchs(branch_num, *, node_box):
             if n % 2000 == 0:
                 print('')
 
-    print('\n%s random branches generated.' % n)
+    print('Finish: %s random branches generated.' % n)
 
     return node_box
 
 
+# ----------------------------------------------------------------------------------------------------------------------
 def generate_tree(node_box):
+    """生成用于迭代的tree： 将node_box数据深拷贝至tree实例中"""
+
+    # TODO
     pass
 
 
-def deep_copy(node):
-    """深度复制节点内的所有instance"""
+# ----------------------------------------------------------------------------------------------------------------------
+def evolution_go(tree_box):
+    
+    # TODO
+
     pass
 
 
@@ -177,9 +259,9 @@ if __name__ == '__main__':
     df.set_index('timestamp', inplace=True)
 
     node_box = generate_leaves(1000, df_source=df)  # inplace node_box
-
-    node_box = add_first_level_branchs(500, df_source=df, node_box=node_box)  # inplace node_box
-
-    node_box = add_random_branchs(10000, node_box=node_box)  # inplace node_box
+    node_box = add_first_level_branchs(1000, df_source=df, node_box=node_box)  # not inplace node_box
+    node_box = add_second_level_branch(1000, node_box=node_box)  # not inplace node_box
+    node_box = add_limit_depth_branch(1000, node_box=node_box)  # inplace node_box
+    node_box = add_random_branchs(1000, node_box=node_box)  # inplace node_box
 
     print('\nend ----------------------------------------------------------------------------------------', end='\n\n')

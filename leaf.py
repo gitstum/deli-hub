@@ -32,6 +32,10 @@ class Terminal(Tools):
         self.terminal_result = pd.Series()  # mapped_data
         self.class_data = pd.Series()
 
+        self.depth = 0
+        self.width = 0 
+        self.population = 1
+
         # inputs ------------------------------------------
         self.df_source = df_source
 

@@ -17,24 +17,24 @@ class Primitive(Tools):
     score_num = 0
     avg_score = 0
 
-    def __init__(self, *, node_box, intergrator_map=None, primitive_pbs=None, child_num_range=None, node_data=None,
-                 lv_mut_tag=None):
+    def __init__(self, *, node_box, intergrator_map=None, primitive_pbs=None, child_num_range=None,
+                 node_data=None, lv_mut_tag=None):
 
+        # rank --------------------------------------------
         self.name = self.get_id('primitive')
-
-        self.branch_depth = 0  # 下方最深有多少层node
-        self.branch_width = 0  # 下方第一层有多少node
-        self.branch_population = 0  # 总共有多少node（包括自身）
-
         self.score_list = []
         self.score_num = 0
         self.avg_score = 0
 
+        # get data ----------------------------------------
         self.node_result = pd.Series()  # weighted_data
         self.primitive_result = pd.Series()
 
-        # ----------------------------
+        self.depth = 0  # 下方最深有多少层node。terminal: 0
+        self.width = 0  # 下方第一层有多少node。terminal: 0
+        self.population = 0  # 总共有多少node（包括自身）。terminal: 1
 
+        # inputs ------------------------------------------
         self.node_box = node_box.copy()  # ~~
 
         if not intergrator_map:
@@ -52,6 +52,7 @@ class Primitive(Tools):
         else:
             self.child_num_range = child_num_range
 
+        # rebuild model -----------
         if not node_data:
             self.node_data = Integrator.node_data.copy()  # ~~
         else:
@@ -214,7 +215,8 @@ class Primitive(Tools):
             return True  # None
 
         if len(child_lv1_list) < 2:
-            print('TypeError: missing required positional argument in %s for %s. Regenerate method_ins. 19851' % (self, self.node_data['inter_method']))
+            print('TypeError: missing required positional argument in %s for %s. Regenerate method_ins. 19851' % (
+            self, self.node_data['inter_method']))
             return True
 
         for child_lv1 in child_lv1_list:
@@ -231,23 +233,14 @@ class Primitive(Tools):
 
     def __get_branch_info(self):
 
-        self.branch_width = len(self.node_data['method_ins'])
+        self.width = len(self.node_data['method_ins'])
 
-        self.branch_population = 1
-        branch_list = []
+        self.population = 1
+        self.depth = 0
         for instance in self.node_data['method_ins']:
-            if isinstance(instance, Terminal):
-                self.branch_population += 1
-            elif isinstance(instance, Primitive):
-                self.branch_population += instance.branch_population
-                branch_list.append(instance)
-            else:
-                raise ValueError('instance is neither Terminal nor Primitive: %s' % instance)
-
-        self.branch_depth = 0
-        for instance in branch_list:
-            self.branch_depth = max(self.branch_depth, instance.branch_depth)
-        self.branch_depth += 1  # include self.  
+            self.population += instance.population
+            self.depth = max(self.depth, instance.depth)
+        self.depth += 1  # include self.  
 
     def __mutate_primitive_method(self):
 
@@ -292,7 +285,6 @@ class Primitive(Tools):
         self.__fill_output_type()
 
         return True
-
 
     def __mutate_primitive_offspring(self, node_box):
         """变更子节点"""
@@ -346,7 +338,7 @@ class Primitive(Tools):
 
         if not len(instance_list) >= 3:
             return False  # at least 2 child nodes
-        
+
         if not random.random() < self.primitive_pbs['popchild_pb']:
             return False
 
@@ -449,12 +441,12 @@ class Primitive(Tools):
         child_instance_list = []
         for instance in new_node_data['method_ins']:
             child_instance_list.append(instance.copy())
-        new_node_data['method_ins'] = child_instance_list.copy()   # 向tree、forest报告??
-        
+        new_node_data['method_ins'] = child_instance_list.copy()  # 向tree、forest报告??
+
         return new_instance
 
     def add_score(self, score):
-        
+
         # TODO test it
 
         self.score_list.append(score)
@@ -463,7 +455,7 @@ class Primitive(Tools):
             instance.add_score(score)
 
     def update_score(self, sortino_score):
-        
+
         # TODO  test it
 
         self.avg_score = (self.avg_score * self.score_num + sortino_score) / (self.score_num + 1)
@@ -483,7 +475,7 @@ class Primitive(Tools):
         mutation_tag = False
 
         self.lv_mut_tag[2] = Tools.mutate_weight(self.node_data, reweight_pb=self.primitive_pbs['reweight_pb'])
-        
+
         self.lv_mut_tag[3] = False
         if self.__mutate_primitive_method() or self.__mutate_primitive_offspring(node_box):
             self.lv_mut_tag[3] = True
@@ -501,7 +493,7 @@ class Primitive(Tools):
     def mutate_offsprint_num_cross(self):
 
         pass
-        return 
+        return
 
     def recal(self):
 
