@@ -213,9 +213,6 @@ class Primitive(Tools):
         if not child_lv1_list:
             return True  # None
 
-        if isinstance(child_lv1_list, bool):
-            print(child_lv1_list, self.node_data['method_ins'])
-
         if len(child_lv1_list) < 2:
             print('TypeError: missing required positional argument in %s for %s. Regenerate method_ins. 19851' % (self, self.node_data['inter_method']))
             return True
@@ -296,10 +293,113 @@ class Primitive(Tools):
 
         return True
 
-    def mutate_offspring_num(self):
 
-        pass
-        return False
+    def __mutate_primitive_offspring(self, node_box):
+        """变更子节点"""
+
+        # TODO test it.
+
+        mutation_tag = False
+
+        changed = self.__mutate_primitive_offspring_change(node_box)  # 变换
+        if changed:
+            mutation_tag = True
+
+        if self.node_data['input_addable']:
+
+            poped = self.__mutate_primitive_offspring_pop()  # 剔除
+            added = self.__mutate_primitive_offspring_add()  # ”新增“
+
+            if poped or added:
+                mutation_tag = True
+
+        return mutation_tag
+
+    def __mutate_primitive_offspring_change(self, node_box):
+        """子节点变更：node_box 中同类数据类型的随机替换"""
+
+        # TODO test it.
+
+        if not random.random() < self.primitive_pbs['changechild_pb']:
+            return False
+
+        instance_list = self.node_data['method_ins']  # view
+
+        child = random.choice(instance_list)
+        node_type = child.node_data['node_type']
+        new_child = random.choice(node_box[node_type])
+        new_child = new_child.copy()  # ~~
+        change_dict = {child: new_child}
+
+        new_instance_list = [change_dict[i] if i in change_dict else i for i in instance_list]
+
+        self.node_data['method_ins'] = new_instance_list.copy()
+
+        return True
+
+    def __mutate_primitive_offspring_pop(self):
+        """子节点剔除：随机剔除"""
+
+        # TODO test it.
+
+        instance_list = self.node_data['method_ins']  # view
+
+        if not len(instance_list) >= 3:
+            return False  # at least 2 child nodes
+        
+        if not random.random() < self.primitive_pbs['popchild_pb']:
+            return False
+
+        child = random.choice(instance_list)
+        instance_list.remove(child)
+
+        self.node_data['method_ins'] = instance_list.copy()
+
+        return True
+
+    def __mutate_primitive_offspring_add(self, node_box):
+        """子节点新增
+        permutation类：随机选一个已有child，复制， 变异20次。
+        combination类：随机新增 pos_value
+        """
+
+        # TODO test it.
+
+        if not random.random() < self.primitive_pbs['addchild_pb']:
+            return False
+
+        instance_list = self.node_data['method_ins']  # view
+        method = self.node_data['inter_method']
+        mut_map = self.intergrator_map['mutation_map']
+
+        if method in mut_map['permutation']:
+
+            new_instance = random.choice(instance_list).copy()
+            if isinstance(new_instance, Primitive):
+                n = 0
+                while n < 20:
+                    new_instance.mutate_primitive(node_box=node_box)
+                new_instance.recal()  # note: recal()
+
+            elif isinstance(new_instance, Terminal):
+                n = 0
+                while n < 20:
+                    new_instance.mutate_terminal()
+                new_instance.recal()  # note: recal()
+
+            else:
+                raise TypeError('new_instance not Primitive nor Terminal. 6515')
+
+        elif method in mut_map['combination']:
+            new_instance = random.choice(node_box['pos_value'])
+
+        else:
+            new_instance = random.choice(node_box['all'])
+
+        insert_num = random.randint(0, len(instance_list))
+        self.node_data['method_ins'].insert(insert_num, new_instance)
+
+        return True
 
     # ----------------------------------------------------------------------------------------------------------------------
 
@@ -372,18 +472,36 @@ class Primitive(Tools):
         for instance in self.node_data['method_ins']:
             instance.update_score(sortino_score)
 
-    def mutate_primitive(self):
+    def mutate_primitive(self, node_box=None, update_node_box=True):
+
+        if node_box:
+            if update_node_box:
+                self.node_box = node_box.copy()
+        else:
+            node_box = self.node_box
 
         mutation_tag = False
 
-        self.lv_mut_tag[1] = self.mutate_offspring_num()
         self.lv_mut_tag[2] = Tools.mutate_weight(self.node_data, reweight_pb=self.primitive_pbs['reweight_pb'])
-        self.lv_mut_tag[3] = self.__mutate_primitive_method()
+        
+        self.lv_mut_tag[3] = False
+        if self.__mutate_primitive_method() or self.__mutate_primitive_offspring(node_box):
+            self.lv_mut_tag[3] = True
 
-        if self.lv_mut_tag[1] or self.lv_mut_tag[2] or self.lv_mut_tag[3]:
+        if self.lv_mut_tag[2] or self.lv_mut_tag[3]:
             mutation_tag = True
 
         return mutation_tag
+
+    def mutate_offspring_num_random(self):
+
+        pass
+        return False
+
+    def mutate_offsprint_num_cross(self):
+
+        pass
+        return 
 
     def recal(self):
 
