@@ -37,6 +37,9 @@ node_box = {
 
 
 def add_node_to_box(node_box, node_instance):
+    """根据 node 的数据类型（pos/abs）分类添加到 node_box
+    NOTE:inplace.
+    """
 
     node_type = node_instance.node_data['node_type']  # abs/pos
     node_box[node_type].append(node_instance)
@@ -44,6 +47,9 @@ def add_node_to_box(node_box, node_instance):
 
 
 def merge_note_box(*args):
+    """将两个不同的node_box进行合并，并返还新的node_box。
+    NOTE: not inplace
+    """
 
     all_value_list = []
     pos_value_list = []
@@ -62,7 +68,14 @@ def merge_note_box(*args):
 
     return node_box
 
-def generate_leaves(terminal_num, *, df_source, node_box=None):
+
+def generate_leaves(terminal_num, *, df_source, node_box=None,
+                    terminal_pbs=None, classifier_map=None, classifier_group=None):
+    """随机生成指定数量的Terminal，返还填充后的 node_box
+    NOTE: 如传入node_box，则inplace。
+    """
+
+    print('\nGenerate leaves. counting:')
 
     if not node_box:
         node_box = {
@@ -73,14 +86,27 @@ def generate_leaves(terminal_num, *, df_source, node_box=None):
 
     n = 0
     while n < terminal_num:
-        terminal = Terminal(df_source=df_source)
+        terminal = Terminal(df_source=df_source,
+                            terminal_pbs=terminal_pbs, classifier_map=classifier_map, classifier_group=classifier_group)
         terminal.create_terminal()
         add_node_to_box(node_box, terminal)
         n += 1
 
+        if n % 100 == 0:
+            print(n, end=', ')
+            if n % 2000 == 0:
+                print('')
+
+    print('\n%s leaves generated.' % n)
+
     return node_box
 
+
 def add_first_level_branchs(branch_num, *, df_source, node_box):
+    """"""
+
+
+    print('\nGenerate first level branches. counting:')
 
     if not node_box['pos_value'] or not node_box['abs_value']:
         print('node_box empty, generate more leaves.')
@@ -102,11 +128,19 @@ def add_first_level_branchs(branch_num, *, df_source, node_box):
         add_node_to_box(lv1_node_box, primitive)
         n += 1
 
+        if n % 100 == 0:
+            print(n, end=', ')
+            if n % 2000 == 0:
+                print('')
+
+    print('\n%s first level branches generated.' % n)
+
     node_box = merge_note_box(node_box, lv1_node_box)
     return node_box
 
 
 def add_random_branchs(branch_num, *, node_box):
+    print('\nGenerate random branches. counting:')
 
     n = 0
     while n < branch_num:
@@ -114,13 +148,15 @@ def add_random_branchs(branch_num, *, node_box):
         primitive = Primitive(node_box=node_box)
         primitive.create_primitive()
         primitive.cal()
-        add_node_to_box(node_box, primitive)
-
-        print(n, end=', ')
-        if n % 25 == 0:
-            print('')
-
+        add_node_to_box(node_box, primitive)  # 生成10,000个节点大约需要3分钟
         n += 1
+
+        if n % 100 == 0:
+            print(n, end=', ')
+            if n % 2000 == 0:
+                print('')
+
+    print('\n%s random branches generated.' % n)
 
     return node_box
 
@@ -128,31 +164,22 @@ def add_random_branchs(branch_num, *, node_box):
 def generate_tree(node_box):
     pass
 
+
 def deep_copy(node):
     """深度复制节点内的所有instance"""
     pass
 
 
 if __name__ == '__main__':
-
     pd.set_option('display.max_rows', 8)
     df = pd.read_csv('data/bitmex_price_1hour_2020q1.csv')
     df['timestamp'] = pd.to_datetime(df.timestamp)
     df.set_index('timestamp', inplace=True)
 
-    print(node_box)
+    node_box = generate_leaves(1000, df_source=df)  # inplace node_box
 
-    node_box = generate_leaves(500, df_source=df)  # inplace node_box
-    # print(node_box)
-    print('leaves generated.')
+    node_box = add_first_level_branchs(500, df_source=df, node_box=node_box)  # inplace node_box
 
-    node_box = add_first_level_branchs(50, df_source=df, node_box=node_box)  # inplace node_box
-    # print(node_box)
-    print('first branches generated.')
-
-    node_box = add_random_branchs(100000, node_box=node_box)  # inplace node_box
-    # print(node_box)
-    print('random branches generated.')
-
+    node_box = add_random_branchs(10000, node_box=node_box)  # inplace node_box
 
     print('\nend ----------------------------------------------------------------------------------------', end='\n\n')

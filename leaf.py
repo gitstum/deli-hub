@@ -18,29 +18,27 @@ class Terminal(Tools):
     score_num = 0
     avg_score = 0
 
-    def __init__(self, *, df_source, terminal_pbs=None, classifier_map=None, classifier_group=None, node_data=None,
-                 lv_mut_tag=None):
+    def __init__(self, *, df_source, terminal_pbs=None, classifier_map=None, classifier_group=None,
+                 node_data=None, lv_mut_tag=None):
 
+        # rank --------------------------------------------
         self.name = self.get_id('terminal')
         self.score_list = []
         self.score_num = 0
         self.avg_score = 0
 
+        # get data ----------------------------------------
         self.node_result = pd.Series()  # weighted_data
         self.terminal_result = pd.Series()  # mapped_data
         self.class_data = pd.Series()
 
+        # inputs ------------------------------------------
         self.df_source = df_source
 
         if not terminal_pbs:
             self.terminal_pbs = Classifier.terminal_pbs.copy()
         else:
             self.terminal_pbs = terminal_pbs
-
-        if not node_data:
-            self.node_data = Classifier.node_data.copy()
-        else:
-            self.node_data = node_data
 
         if not classifier_map:
             self.classifier_map = Classifier.classifier_map
@@ -51,6 +49,12 @@ class Terminal(Tools):
             self.classifier_group = Classifier.classifier_group
         else:
             self.classifier_group = classifier_group
+
+        # rebuild model -----------
+        if not node_data:
+            self.node_data = Classifier.node_data.copy()
+        else:
+            self.node_data = node_data
 
         if not lv_mut_tag:
             self.lv_mut_tag = Classifier.lv_mut_tag.copy()

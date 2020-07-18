@@ -392,8 +392,6 @@ class Primitive(Tools):
 
     def cal(self):
 
-        # TODO: test
-
         if self.lv_mut_tag[3]:  # lv.3
 
             func = self.node_data['inter_method']
@@ -401,33 +399,11 @@ class Primitive(Tools):
 
             args = []
             for instance in instance_list:
-
                 sig_series = instance.node_result.copy()
-
-                # bug 处理
-                if isinstance(sig_series, pd.DataFrame):
-                    print('ERROR: signal(node_result) should not be DataFrame. 654852')
-                    print('Where: ', self, self.node_data['inter_method'])
-                    
-                    if sig_series.shape[1] > 2:
-                        raise ValueError('ERROR: signal has more than 2 columns. 75249')
-
-                    sig_series.columns = ['a', 'b']
-                    if sig_series[sig_series['a'] != sig_series['b']].shape[0] > 0:
-                        raise ValueError('ERROR: signal columns are not the same. 95498')
-                    else:  # 出错的典型情况：Series变成两列的DataFrame
-                        print('Modify 654852: signal columns are the same, keep one.')
-
-                        # do the modify
-                        instance.node_result = sig_series['a'].copy()
-                        sig_series = instance.node_result.copy()
-
                 args.append(sig_series)
 
             self.primitive_result = func(*args)
             self.node_result = Tools.cal_weight(self.primitive_result, self.node_data['weight'])
-
-            print('c', end='; ')
 
         elif self.lv_mut_tag[2]:  # lv.2
 
@@ -435,10 +411,5 @@ class Primitive(Tools):
 
         for key in self.lv_mut_tag.keys():
             self.lv_mut_tag[key] = False  # reset mutation_tag
-
-        # check datatype. 即使这里做了检验，但有的 node的node_result 还是莫名其妙是两列的DataFrame，且两列内容一样。猜测是python本身的bug。
-        if isinstance(self.node_result, pd.DataFrame):
-            raise TypeError('ERROR: node_result should not be DataFrame.',
-                            self, self.node_data['inter_method'], self.node_data['method_ins'])
 
         return self.node_result
