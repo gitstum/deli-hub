@@ -11,7 +11,6 @@ from leaf import Terminal
 
 
 class Primitive(Tools):
-
     name = 'primitive'
     score_list = []
     score_num = 0
@@ -35,7 +34,7 @@ class Primitive(Tools):
         self.population = 0  # 总共有多少node（包括自身）。terminal: 1
 
         # inputs ------------------------------------------
-        self.node_box = node_box.copy()  # ~~
+        self.node_box = node_box  # .copy()  # ~~
 
         if not intergrator_map:
             self.intergrator_map = Integrator.intergrator_map
@@ -50,18 +49,18 @@ class Primitive(Tools):
         if not child_num_range:
             self.child_num_range = Integrator.child_num_range.copy()
         else:
-            self.child_num_range = child_num_range
+            self.child_num_range = child_num_range.copy()
 
         # rebuild model -----------
         if not node_data:
             self.node_data = Integrator.node_data.copy()  # ~~
         else:
-            self.node_data = node_data
+            self.node_data = node_data.copy()
 
         if not lv_mut_tag:
             self.lv_mut_tag = Integrator.lv_mut_tag.copy()
         else:
-            self.lv_mut_tag = lv_mut_tag
+            self.lv_mut_tag = lv_mut_tag.copy()
 
         self.inter_data = pd.Series()
 
@@ -216,7 +215,7 @@ class Primitive(Tools):
 
         if len(child_lv1_list) < 2:
             print('TypeError: missing required positional argument in %s for %s. Regenerate method_ins. 19851' % (
-            self, self.node_data['inter_method']))
+                self, self.node_data['inter_method']))
             return True
 
         for child_lv1 in child_lv1_list:
@@ -231,7 +230,7 @@ class Primitive(Tools):
             #     print(child_lv1_list, child_lv2_list)
             #     return True
 
-    def __get_branch_info(self):
+    def __update_branch_info(self):
 
         self.width = len(self.node_data['method_ins'])
 
@@ -244,8 +243,6 @@ class Primitive(Tools):
 
     def __mutate_primitive_method(self):
 
-        # TODO: test
-
         if not random.random() < self.primitive_pbs['refunc_pb']:
             return False
 
@@ -254,11 +251,6 @@ class Primitive(Tools):
         child_num = len(self.node_data['method_ins'])
         input_type = self.node_data['method_ins'][0].node_data['node_type']  # abs/pos
         output_type = self.node_data['node_type']
-
-        # 不导致计算出错的，都可以换
-        if child_num > 2:
-            mutation_map.pop('input_restrict_abs')
-            mutation_map.pop('input_restrict_2')
 
         choice_box = []
         for group, method_list in mutation_map.items():
@@ -272,10 +264,18 @@ class Primitive(Tools):
                 if output_type == 'abs_value' and group == 'output_01':
                     choice_box += method_list
 
+        # 排除自身
         while method in choice_box:
             choice_box.remove(method)
 
+        # 排除导致计算出错的(不导致计算出错的，都可以换)
+        if child_num > 2:
+            for restrict_method in mutation_map['input_restrict_2']:
+                while restrict_method in choice_box:
+                    choice_box.remove(restrict_method)
+
         if not choice_box:
+            print('note: choice_box empty, no mutation for inter_method: %s. 89463' % method)
             return False
 
         new_method = random.choice(choice_box)
@@ -284,12 +284,12 @@ class Primitive(Tools):
         self.__fill_input_type()
         self.__fill_output_type()
 
+        print('lv.3 mutation: intergrator method changed to: ', new_method)
+
         return True
 
     def __mutate_primitive_offspring(self, node_box):
         """变更子节点"""
-
-        # TODO test it.
 
         mutation_tag = False
 
@@ -300,7 +300,7 @@ class Primitive(Tools):
         if self.node_data['input_addable']:
 
             poped = self.__mutate_primitive_offspring_pop()  # 剔除
-            added = self.__mutate_primitive_offspring_add()  # ”新增“
+            added = self.__mutate_primitive_offspring_add(node_box)  # ”新增“
 
             if poped or added:
                 mutation_tag = True
@@ -309,8 +309,6 @@ class Primitive(Tools):
 
     def __mutate_primitive_offspring_change(self, node_box):
         """子节点变更：node_box 中同类数据类型的随机替换"""
-
-        # TODO test it.
 
         if not random.random() < self.primitive_pbs['changechild_pb']:
             return False
@@ -327,12 +325,12 @@ class Primitive(Tools):
 
         self.node_data['method_ins'] = new_instance_list.copy()
 
+        print('lv.3 mutation: primitive offspring changed.')
+
         return True
 
     def __mutate_primitive_offspring_pop(self):
         """子节点剔除：随机剔除"""
-
-        # TODO test it.
 
         instance_list = self.node_data['method_ins']  # view
 
@@ -347,6 +345,8 @@ class Primitive(Tools):
 
         self.node_data['method_ins'] = instance_list.copy()
 
+        print('lv.3 mutation: primitive offspring poped.')
+
         return True
 
     def __mutate_primitive_offspring_add(self, node_box):
@@ -355,9 +355,9 @@ class Primitive(Tools):
         combination类：随机新增 pos_value
         """
 
-        # TODO test it.
+        addchild_pb = self.primitive_pbs['addchild_pb']
 
-        if not random.random() < self.primitive_pbs['addchild_pb']:
+        if not random.random() < addchild_pb:
             return False
 
         instance_list = self.node_data['method_ins']  # view
@@ -369,14 +369,18 @@ class Primitive(Tools):
             new_instance = random.choice(instance_list).copy()
             if isinstance(new_instance, Primitive):
                 n = 0
-                while n < 20:
+                while n < (1 / addchild_pb / 2):  # 避免概率太高，死循环
                     new_instance.mutate_primitive(node_box=node_box)
+                    print('re_mutate_primitive counting: %d' % n)
+                    n += 1
                 new_instance.recal()  # note: recal()
 
             elif isinstance(new_instance, Terminal):
                 n = 0
                 while n < 20:
                     new_instance.mutate_terminal()
+                    print('mutate terminal counting: %d' % n)
+                    n += 1
                 new_instance.recal()  # note: recal()
 
             else:
@@ -391,9 +395,11 @@ class Primitive(Tools):
         insert_num = random.randint(0, len(instance_list))
         self.node_data['method_ins'].insert(insert_num, new_instance)
 
+        print('lv.3 mutation: primitive offspring added for %s' % method)
+
         return True
 
-    # ----------------------------------------------------------------------------------------------------------------------
+    # ------------------------------------------------------------------------------------------------------------------
 
     def create_primitive(self, terminal_child_only=False):
         """create a random primitive  --与terminal不同，这里是不会计算并返还结果的。"""
@@ -413,7 +419,7 @@ class Primitive(Tools):
         self.__fill_output_type()
 
         # 5. 生成branch属性
-        self.__get_branch_info()
+        self.__update_branch_info()
 
         # 5. 向tree、forest报告
         return self.node_data['method_ins']
@@ -421,9 +427,11 @@ class Primitive(Tools):
     def get_args(self, strip=True):
         return self.node_data
 
-    def copy(self):
+    def get_node_map():
+        pass
 
-        # TODO 递归，应该能全部做到深度复制 test it 
+    def copy(self):
+        """深度复制. tested."""
 
         new_instance = self.__class__(node_box=self.node_box,
                                       intergrator_map=self.intergrator_map,
@@ -447,16 +455,12 @@ class Primitive(Tools):
 
     def add_score(self, score):
 
-        # TODO test it
-
         self.score_list.append(score)
 
         for instance in self.node_data['method_ins']:
             instance.add_score(score)
 
     def update_score(self, sortino_score):
-
-        # TODO  test it
 
         self.avg_score = (self.avg_score * self.score_num + sortino_score) / (self.score_num + 1)
         self.score_num += 1
@@ -481,19 +485,11 @@ class Primitive(Tools):
             self.lv_mut_tag[3] = True
 
         if self.lv_mut_tag[2] or self.lv_mut_tag[3]:
+            self.__update_branch_info()
             mutation_tag = True
 
         return mutation_tag
 
-    def mutate_offspring_num_random(self):
-
-        pass
-        return False
-
-    def mutate_offsprint_num_cross(self):
-
-        pass
-        return
 
     def recal(self):
 
