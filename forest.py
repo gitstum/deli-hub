@@ -1,5 +1,5 @@
 # --coding:utf-8--
-
+import random
 import time
 import pandas as pd
 
@@ -213,7 +213,7 @@ def add_random_branchs(branch_num, *, node_box,
                        intergrator_map=None, primitive_pbs=None, child_num_range=None):
     """随机添加branch，不做层数限制"""
 
-    print('\nGenerate random branches. counting:')
+    print('\nGenerate branches: %drandom. counting:')
 
     n = 0
     while n < branch_num:
@@ -258,10 +258,40 @@ if __name__ == '__main__':
     df['timestamp'] = pd.to_datetime(df.timestamp)
     df.set_index('timestamp', inplace=True)
 
-    node_box = generate_leaves(1000, df_source=df)  # inplace node_box
+    memory_before = Tools.memory_free()
+
+    node_box = generate_leaves(2000, df_source=df)  # inplace node_box
     node_box = add_first_level_branchs(1000, df_source=df, node_box=node_box)  # not inplace node_box
-    node_box = add_second_level_branch(1000, node_box=node_box)  # not inplace node_box
-    node_box = add_limit_depth_branch(1000, node_box=node_box)  # inplace node_box
-    node_box = add_random_branchs(1000, node_box=node_box)  # inplace node_box
+    node_box = add_second_level_branch(500, node_box=node_box)  # not inplace node_box
+    node_box = add_limit_depth_branch(200, node_box=node_box)  # inplace node_box
+    node_box = add_random_branchs(100, node_box=node_box)  # inplace node_box
+
+    memory_after = Tools.memory_free()
+    print('memory consumed: %.6f GB' % (memory_before - memory_after))
+
+    # debug
+    num = 0
+    while num < 1000:
+        instance = random.choice(node_box['pos_value'])
+        while isinstance(instance, Terminal):  # or instance.node_data['inter_method'] != Tools.sig_trend_strict:
+            instance = random.choice(node_box['pos_value'])
+
+        instance = instance.copy()
+        result = instance.mutate_primitive(node_box=node_box)
+
+        n = 0
+        while n < 1000:
+            result = instance.mutate_primitive()
+            while not result:
+                result = instance.mutate_primitive()
+
+            node_result_new = instance.cal()
+
+            n += 1
+
+        num += 1
+        print(num, '$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$')
+
+    print('finish.')
 
     print('\nend ----------------------------------------------------------------------------------------', end='\n\n')
