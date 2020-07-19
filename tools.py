@@ -1841,7 +1841,10 @@ class Tools(object):
         df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
         df_mult['result'] = df_mult['result'] * restrict_arr
 
-        return df_mult['result'] * coefficient
+        result =  df_mult['result'] * coefficient
+        result.fillna(0, inplace=True)
+
+        return result
 
     # 增强、削弱函数 -----------------------------------------------------------------------------------------------------
     @staticmethod
@@ -1866,7 +1869,10 @@ class Tools(object):
         df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
         df_mult['result'] = df_mult['result'] * restrict_arr
 
-        return df_mult['result'] * coefficient
+        result =  df_mult['result'] * coefficient
+        result.fillna(0, inplace=True)
+
+        return result
 
     # 增强、削弱函数 -----------------------------------------------------------------------------------------------------
     @staticmethod
@@ -1885,7 +1891,10 @@ class Tools(object):
         df_mult['result'] = ref_arr.rolling(1).apply(lambda x: Tools.sigmoid(x, coefficient), raw=True)
         df_mult['result'] = df_mult['result'] * restrict_arr
 
-        return df_mult['result'] * coefficient
+        result =  df_mult['result'] * coefficient
+        result.fillna(0, inplace=True)
+
+        return result
 
     # 多项合并函数 ------------------------------------------------------------------------------------------------------
     @staticmethod
