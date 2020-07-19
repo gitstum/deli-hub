@@ -18,29 +18,31 @@ class Terminal(Tools):
     score_num = 0
     avg_score = 0
 
-    def __init__(self, *, df_source, terminal_pbs=None, classifier_map=None, classifier_group=None, node_data=None,
-                 lv_mut_tag=None):
+    def __init__(self, *, df_source, terminal_pbs=None, classifier_map=None, classifier_group=None,
+                 node_data=None, lv_mut_tag=None):
 
+        # rank --------------------------------------------
         self.name = self.get_id('terminal')
         self.score_list = []
         self.score_num = 0
         self.avg_score = 0
 
+        # get data ----------------------------------------
         self.node_result = pd.Series()  # weighted_data
         self.terminal_result = pd.Series()  # mapped_data
         self.class_data = pd.Series()
 
+        self.depth = 0
+        self.width = 0 
+        self.population = 1
+
+        # inputs ------------------------------------------
         self.df_source = df_source
 
         if not terminal_pbs:
             self.terminal_pbs = Classifier.terminal_pbs.copy()
         else:
-            self.terminal_pbs = terminal_pbs
-
-        if not node_data:
-            self.node_data = Classifier.node_data.copy()
-        else:
-            self.node_data = node_data
+            self.terminal_pbs = terminal_pbs.copy()
 
         if not classifier_map:
             self.classifier_map = Classifier.classifier_map
@@ -52,10 +54,16 @@ class Terminal(Tools):
         else:
             self.classifier_group = classifier_group
 
+        # rebuild model -----------
+        if not node_data:
+            self.node_data = Classifier.node_data.copy()
+        else:
+            self.node_data = node_data.copy()
+
         if not lv_mut_tag:
             self.lv_mut_tag = Classifier.lv_mut_tag.copy()
         else:
-            self.lv_mut_tag = lv_mut_tag
+            self.lv_mut_tag = lv_mut_tag.copy()
 
     def __get_classifier_detail(self, func):
 
@@ -1159,6 +1167,36 @@ class Terminal(Tools):
             self.node_data['class_args_features_ins'].append(instance)
             self.node_data['class_args_features'].append(instance.cal())
 
+    # -------------------------------------------------
+    def __should_be_copied(self, data):
+
+        if isinstance(data, dict):
+            return True
+        if isinstance(data, list):
+            return True
+        if isinstance(data, Indicator):
+            return True
+        if isinstance(data, Terminal):
+            return True
+        if isinstance(data, pd.Series):
+            return True
+        if isinstance(data, pd.DataFrame):
+            return False  # note
+        return False
+
+    # -------------------------------------------------
+    def __copy_dict(self, dict_data):
+
+        new_dict = dict_data.copy()
+
+        for key, value in dict_data.items():
+            if self.__should_be_copied(value):
+                new_dict[key] = dict_data[key].copy()
+            if isinstance(value, dict):
+                new_dict[key] = self.__copy_dict(value)
+                
+        return new_dict
+
     # ------------------------------------------------------------------------------------------------------------------
     def create_terminal(self):
         """create a random terminal."""
@@ -1237,8 +1275,6 @@ class Terminal(Tools):
 
     def copy(self):
 
-        # TODO: TEST it. 注意需要深度复制各个参数instance
-
         new_instance = self.__class__(df_source=self.df_source,
                                       terminal_pbs=self.terminal_pbs,
                                       classifier_map=self.classifier_map,
@@ -1250,26 +1286,34 @@ class Terminal(Tools):
         new_instance.name = self.get_id('%s' % self.name.split('_')[0])
 
         # node_data深拷贝, 其他：score_list应该能自动返回veiw，node_result应能自动返回copy
-        new_instance.__dict__['node_data'] = self.__dict__['node_data'].copy()
-        new_node_data = new_instance.__dict__['node_data']  # view
+        new_instance.__dict__['node_data'] = self.__copy_dict(self.__dict__['node_data'])
 
-        if new_node_data['class_args_features_ins']:
-            new_instance_list = []
-            for instance in new_node_data['class_args_features_ins']:
-                new_instance_list.append(instance.copy())
+        # 旧方法备份：（比较精细，但太长了，还是全部都复制简单些）
+        # new_node_data = new_instance.__dict__['node_data']  # view
 
-            new_node_data['class_args_features_ins'] = new_instance_list.copy()
+        # if new_node_data['class_args_features_ins']:
+        #     new_instance_list = []
+        #     for instance in self.node_data['class_args_features_ins']:
+        #         new_instance_list.append(instance.copy())
 
-        if new_node_data['class_kw_ins']:  # NOTE: feature数据是没有深拷贝的。按照使用习惯，cal之后重新赋值到 class_kw 中
-            new_class_kw_ins = {}
-            for key, instance in new_node_data['class_kw_ins'].items():
+        #     new_node_data['class_args_features_ins'] = new_instance_list.copy()
 
-                if isinstance(instance, Indicator):
-                    new_class_kw_ins[key] = instance.copy()
-                else:
-                    new_class_kw_ins[key] = None
+        # if new_node_data['class_args_features']:
+        #     new_node_data['class_args_features'] = self.node_data['class_args_features'].copy()
 
-            new_node_data['class_kw_ins'] = new_class_kw_ins.copy()
+        # for name in ['class_kw', 'class_kw_ins', 'class_kw_range']:
+
+        #     if new_node_data[name]:
+        #         new_node_data[name] = self.node_data[name].copy()  # 字典
+
+        #         for key, value in self.node_data[name].items():
+
+        #             if isinstance(value, Indicator): 
+        #                 new_node_data[name][key] = value.copy()  # class_kw_ins data
+        #             elif isinstance(value, dict):
+        #                 new_node_data[name][key] = value.copy()  # class_kw_range data
+        #             elif isinstance(value, pd.Series):
+        #                 new_node_data[name][key] = value.copy()  # class_kw data
 
         return new_instance
 

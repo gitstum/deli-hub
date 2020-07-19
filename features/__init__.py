@@ -28,12 +28,12 @@ if '__init__' in model_list:
     model_list.remove('__init__')
 
 # import all modules in this feature folder
-print('')
-print('-' * 41)
-print('[Batch import implementing on "features"]', end='\n\n')
+# print('')
+# print('-' * 41)
+# print('[Batch import implementing on "features"]', end='\n\n')
 for model in model_list:
     command = 'from features import %s' % model
     exec(command)  # see? so don't name sys command on files, dangerous.
-    print(command)
-print('')
-print('-' * 41, '\n')
+    # print(command)
+# print('')
+# print('-' * 41, '\n')

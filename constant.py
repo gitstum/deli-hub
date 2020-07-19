@@ -88,7 +88,7 @@ POS_START = 0
 LIMIT_DISTANCE = 0.5  # the bigger the safer but harder to get traded
 
 # Node name order in node map
-NODE_LETTER_LIST = sorted(list(string.ascii_letters))  # ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
+NODE_TAG_LIST = sorted(list(string.ascii_letters))  # ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
 
 
 # ---------------------------------------------------------------------------------------------------------
