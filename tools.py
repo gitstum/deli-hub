@@ -2030,8 +2030,9 @@ class Tools(object):
         """
 
         result_ref = Tools.comb_sum(*signals)  # NOTE this depends on comb_sum()
+        df_result = pd.DataFrame(result_ref)
+        df_result.columns = ['result_ref']
 
-        df_result = pd.DataFrame(result_ref, columns=['result_ref'])
         df_result['result_sig'] = 0
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning 
         df_result['result_sig'][df_result['result_ref'] > 0] = 1
@@ -2052,7 +2053,8 @@ class Tools(object):
 
         df_sig = Tools.sig_merge(*signals)
 
-        df_result = pd.DataFrame(df_sig.max(axis=1), columns=['sig_max'])
+        df_result = pd.DataFrame(df_sig.max(axis=1))
+        df_result.columns = ['sig_max']
         df_result['sig_min'] = df_sig.min(axis=1)
 
         df_result['result_sig'] = 0
@@ -2075,7 +2077,8 @@ class Tools(object):
 
         df_sig = Tools.sig_merge(*signals)
 
-        df_result = pd.DataFrame(df_sig.max(axis=1), columns=['sig_max'])
+        df_result = pd.DataFrame(df_sig.max(axis=1))
+        df_result.columns = ['sig_max']
         df_result['sig_min'] = df_sig.min(axis=1)
 
         df_result['result_sig'] = 0
@@ -2098,7 +2101,8 @@ class Tools(object):
 
         df_sig = Tools.sig_merge(*signals)
 
-        df_result = pd.DataFrame(df_sig.max(axis=1), columns=['sig_max'])
+        df_result = pd.DataFrame(df_sig.max(axis=1))
+        df_result.columns = ['sig_max']
         df_result['sig_min'] = df_sig.min(axis=1)
 
         df_result['result_sig'] = 0
@@ -2154,7 +2158,8 @@ class Tools(object):
         result_ref = Tools.comb_min(*trend_signals)  # 注意这里用拆包语法
 
         # result_ref.name = 'result_ref'
-        df_sig = pd.DataFrame(result_ref, columns=['result_ref'])
+        df_sig = pd.DataFrame(result_ref)
+        df_sig.columns = ['result_ref']  # 这个必须另起一行来写。。
         df_sig['result_sig'] = 0
 
         pd.set_option('mode.chained_assignment', None)  # close SettingWithCopyWarning
@@ -2214,7 +2219,8 @@ class Tools(object):
         """
 
         result_ref = Tools.sig_trend_strict(*signals)
-        df_sig = pd.DataFrame(result_ref, columns=['result_ref'])
+        df_sig = pd.DataFrame(result_ref)
+        df_sig.columns = ['result_ref']
 
         df_sig['result_sig'] = 0
 
@@ -2235,7 +2241,8 @@ class Tools(object):
         """
 
         result_ref = Tools.sig_trend_strict(*signals)
-        df_sig = pd.DataFrame(result_ref, columns=['result_ref'])
+        df_sig = pd.DataFrame(result_ref)
+        df_sig.columns = ['result_ref']
 
         df_sig['result_sig'] = 0
 
@@ -2256,7 +2263,8 @@ class Tools(object):
         """
 
         result_ref = Tools.sig_trend_loose(*signals)
-        df_sig = pd.DataFrame(result_ref, columns=['result_ref'])
+        df_sig = pd.DataFrame(result_ref)
+        df_sig.columns = ['result_ref']
 
         df_sig['result_sig'] = 0
 
@@ -2277,7 +2285,8 @@ class Tools(object):
         """
 
         result_ref = Tools.sig_trend_loose(*signals)
-        df_sig = pd.DataFrame(result_ref, columns=['result_ref'])
+        df_sig = pd.DataFrame(result_ref)
+        df_sig.columns = ['result_ref']
 
         df_sig['result_sig'] = 0
 
