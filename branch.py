@@ -319,9 +319,9 @@ class Primitive(Tools):
         node_type = child.node_data['node_type']
         new_child = random.choice(node_box[node_type])
         new_child = new_child.copy()  # ~~
-        change_dict = {child: new_child}
+        change_map = {child: new_child}
 
-        new_instance_list = [change_dict[i] if i in change_dict else i for i in instance_list]
+        new_instance_list = [change_map[i] if i in change_map else i for i in instance_list]
 
         self.node_data['method_ins'] = new_instance_list.copy()
 
@@ -371,15 +371,15 @@ class Primitive(Tools):
                 n = 0
                 while n < (1 / addchild_pb / 2):  # 避免概率太高，死循环
                     new_instance.mutate_primitive(node_box=node_box)
-                    print('re_mutate_primitive counting: %d' % n)
+                    # print('re_mutate_primitive counting: %d' % n)
                     n += 1
                 new_instance.recal()  # note: recal()
 
             elif isinstance(new_instance, Terminal):
                 n = 0
-                while n < 20:
+                while n < 20:  # 10次和20次时间消耗差别不大。。
                     new_instance.mutate_terminal()
-                    print('mutate terminal counting: %d' % n)
+                    # print('mutate terminal counting: %d' % n)
                     n += 1
                 new_instance.recal()  # note: recal()
 
@@ -468,7 +468,7 @@ class Primitive(Tools):
         for instance in self.node_data['method_ins']:
             instance.update_score(sortino_score)
 
-    def mutate_primitive(self, node_box=None, update_node_box=True):
+    def mutate_primitive(self, *, node_box=None, update_node_box=True):
 
         if node_box:
             if update_node_box:
