@@ -1,48 +1,58 @@
 #--coding:utf-8--
+import random
+import pandas as pd
+
 
 from tools import Tools
 from leaf import Terminal
 from branch import Primitive
 from constant import *
-
-from private.prameters import Board
+from backtest.swap_engine import Judge
 
 
 class Tree(Tools):
 
+    name = 'Tree'
 
-	def __init__(self , *, node_box, tree_pbs=None, tag_list=None, node_data=None):
+    def __init__(self , *, node_box, tree_method=None, deputy_range=None, tag_list=None, node_data=None):
 
         self.name = self.get_id('tree')
+        self.now_score = 0
         self.score_list = []
         self.score_num = 0
         self.avg_score = 0
 
-		self.pos_should = pd.Series()
-		self.node_map = {}
+        self.pos_should = pd.Series()
+        self.node_map = {}
 
         self.depth = 0  # 下方最深有多少层node。terminal: 0
         self.width = 0  # 下方第一层有多少node。terminal: 0
         self.population = 0  # 总共有多少node（包括自身）。terminal: 1
 
-		if not tree_pbs:
-			self.tree_pbs = Board.tree_pbs.copy()
-		else:
-			self.tree_pbs = tree_pbs.copy()
+        if not tree_method:
+            tree_method = Tools.comb_sum
 
-		if not tag_list:
-			self.tag_list = NODE_TAG_LIST.copy()
-		else:
-			self.tag_list = tag_list.copy()
+        if deputy_range:
+            self.deputy_range = deputy_range
+        else:
+            self.deputy_range = {'start': 3, 'end': 10}
 
-		if not node_data:
-			self.node_data = Board.node_data.copy()
-		else:
-			self.node_data = node_data.copy()
-    
-	@staticmethod
+        if not tag_list:
+            self.tag_list = NODE_TAG_LIST.copy()
+        else:
+            self.tag_list = tag_list.copy()
+
+        if node_data:
+            self.node_data = node_data.copy()
+        else:
+            self.node_data = dict(tree_method=tree_method,
+                                  deputy_list=[],
+                                  tree_map={}
+                                  )
+
+    @staticmethod
     def get_node_map(node, *, mother_tag=None, tag_list=None):
-    	"""applicable for Primitives."""
+        """applicable for Primitives."""
         
         node_map = {}
         
@@ -61,28 +71,171 @@ class Tree(Tools):
                 node_map[instance_tag] = instance
                 
                 if isinstance(instance, Primitive):
-                    child_node_map = get_node_map(instance, mother_tag=instance_tag, tag_list=tag_list)
+                    child_node_map = Tree.get_node_map(instance, mother_tag=instance_tag, tag_list=tag_list)
                     node_map.update(child_node_map)
                 
         return node_map
 
 
-    def __get_node_map(self):
+    def __update_tree_map(self):
 
-    	node_map = {}
+        node_map = {}
 
-    	tag = iter(self.tag_list)
+        tag = iter(self.tag_list)
 
-    	for deputy in self.node_data['deputy_list']:
+        for deputy in self.node_data['deputy_list']:
 
-    		deputy_tag = tag.__next__()
-    		node_map[deputy_tag] = deputy
+            deputy_tag = tag.__next__()
+            node_map[deputy_tag] = deputy
 
-    		if isinstance(deputy, Primitive):
-    			deputy_map = get_node_map(deputy, mother_tag=deputy_tag, tag_list=self.tag_list)
-    			node_map.update(deputy_map)
+            if isinstance(deputy, Primitive):
+                deputy_map = Tree.get_node_map(deputy, mother_tag=deputy_tag, tag_list=self.tag_list)
+                node_map.update(deputy_map)
 
-		self.node_map = node_map.copy()
+        self.node_data['tree_map'] = node_map.copy()
+
+    def __cal(self):
+
+        args = []
+        func = self.node_data['tree_method']
+
+        for instance in self.node_data['deputy_list']:
+            args.append(instance.node_result)
+
+        pos_should = func(*args)
+
+        return pos_should
+
+    def __deputy_update(self, node_tag):
+        """inplace, update node_result for the line"""
+
+        if len(node_tag) == 0:
+            return  # deputy has no mother
+
+        instance = self.node_data['tree_map'][node_tag]
+        instance.recal()
+
+        mother_node_tag = node_tag[:-1]
+        self.__deputy_update(mother_node_tag)
+
+    # ---------------------------------------------------------------------------------------------------------------
+
+    def generate_tree(self):
+
+        deputy_num = random.randint(self.deputy_range['start'], self.deputy_range['end'])
+        deputy_list = random.sample(self.node_box['pos_value'], deputy_num)
+
+        for instance in deputy_list:
+            self.node_data['deputy_list'].append(instance.copy())
+
+        self.__update_tree_map()
+
+    def get_node(self, node_type):
+
+        tree_map = self.node_data['tree_map']
+        choice_box = list(tree_map.keys())
+        
+        node_tag = random.choice(choice_box)
+        node_instance = tree_map[node_tag]
+
+        if node_type:
+
+            while node_instance.node_data['node_type'] != node_type:
+                node_tag = random.choice(choice_box)
+                node_instance = tree_map[node_tag]         
+
+        return node_tag, node_instance
+
+    def cross_node(self, other_tag, other_node):
+        
+        node_type = other_node.node_data['node_type']
+
+        my_tag, my_node = self.get_node(node_type)
+        change_map = {my_node: other_node}
+
+        if len(my_tag) > 1:
+
+            mother_node_tag = my_tag[:-1]
+            mother_node = self.node_data['tree_map'][mother_node_tag]
+
+            # change branch child
+            instance_list = mother_node.node_data['method_ins']
+            new_instance_list = [change_map[i] if i in change_map else i for i in instance_list]
+            mother_node.node_data['method_ins'] = new_instance_list.copy()
+
+            self.__update_tree_map()
+            self.__deputy_update(mother_node_tag)
+
+        else:  # my_node in self.node_data['deputy_list']
+
+            instance_list = self.node_data['deputy_list']
+            new_instance_list = [change_map[i] if i in change_map else i for i in instance_list]
+            self.node_data['deputy_list'] = new_instance_list.copy()
+
+        if len(other_tag) == 1:  # 针对deputy的添加与淘汰
+            
+            new_deputy = other_node.copy()
+            self.node_data['deputy_list'].append(new_deputy)
+            
+            if len(self.node_data['deputy_list'] > self.deputy_range['end']):
+
+                min_score = np.inf
+                pop_deputy = None
+
+                for deputy in self.node_data['deputy_list']:
+
+                    if deputy.avg_score < min_score:
+                        min_score = deputy.avg_score
+                        pop_deputy = deputy
+
+                self.node_data['deputy_list'].remove(pop_deputy)
+
+        return my_tag, my_node
+
+    def mutate_tree(self, *, node_box=None, update_node_box=True):
+
+        # todo: deputy adding / poping
+
+        mutation_tag = False
+        node_tag, node_instance = self.get_node(node_type=None)  # 选定一个节点进行变异
+        mother_node_tag = node_tag[:-1]
+
+        if isinstance(node_instance, Primitive):
+            mutation_tag = node_instance.mutate_primitive(node_box=node_box, update_node_box=update_node_box)
+
+        elif isinstance(node_instance, Terminal):
+            mutation_tag = node_instance.mutate_terminal()
+
+        else:
+            raise ValueError('ERROR: undefined node type. 49146')
+
+        if mutation_tag:
+            node_instance.cal()  # 更新自己的 node_result，分层根据需要计算
+            self.__deputy_update(mother_node_tag)
+
+        return mutation_tag
+
+
+    def judge_tree(self, df_source):
+
+        pos_should = self.__cal()
+
+        df_book = pd.concat([pos_should, df_source['price_end']])
+        df_book.columns=['pos_should', 'price']
+        df_book['order_price'] = 0
+
+        # timestamp的处理 - 变为end
+        df_book['time_end'] = df_book.index.copy()
+        # TODO
+
+
+        trade_instance = Judge(name=instance.name, df_book=df_book, df_price=df_source)
+        trade_scores = trade_instance.judge_start()
+        sortino_score = trade_scores['Sortino_ratio']
+
+        instance.update_score(sortino_score)
+
+        return scores
 
 
 
