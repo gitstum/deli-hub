@@ -88,10 +88,12 @@ def generate_leaves(terminal_num, *, df_source, node_box=None,
         add_node_to_box(node_box, terminal)
         n += 1
 
-        if n % 100 == 0:
-            print(n, end=', ')
-            if n % 2000 == 0:
-                print('')
+        if n % 10 == 0:
+            if n % 200 == 0 or n == terminal_num:
+                end = '\n'
+            else:
+                end = ','
+            print(n, end=end)
 
     print('Finish: %s leaves generated.' % n)
 
@@ -132,10 +134,12 @@ def add_first_level_branchs(branch_num, *, df_source, node_box,
         add_node_to_box(lv1_node_box, primitive)
         n += 1
 
-        if n % 100 == 0:
-            print(n, end=', ')
-            if n % 2000 == 0:
-                print('')
+        if n % 10 == 0:
+            if n % 200 == 0 or n == branch_num:
+                end = '\n'
+            else:
+                end = ','
+            print(n, end=end)
 
     print('Finish: %s level 1 branches generated.' % n)
 
@@ -166,10 +170,12 @@ def add_second_level_branch(branch_num, *, node_box,
         add_node_to_box(lv2_node_box, primitive)
         n += 1
 
-        if n % 100 == 0:
-            print(n, end=', ')
-            if n % 2000 == 0:
-                print('')
+        if n % 10 == 0:
+            if n % 200 == 0 or n == branch_num:
+                end = '\n'
+            else:
+                end = ','
+            print(n, end=end)
 
     print('Finish: %s level 2 branches generated.' % n)
 
@@ -198,10 +204,12 @@ def add_limit_depth_branch(branch_num, *, node_box, depth_limit=3,
         add_node_to_box(node_box, primitive)  # 生成10,000个节点大约需要3分钟
         n += 1
 
-        if n % 100 == 0:
-            print(n, end=', ')
-            if n % 2000 == 0:
-                print('')
+        if n % 10 == 0:
+            if n % 200 == 0 or n ==branch_num:
+                end = '\n'
+            else:
+                end = ','
+            print(n, end=end)
 
     print('Finish: %s limit depth(%d) branches generated.' % (n, depth_limit))
 
@@ -226,10 +234,12 @@ def add_random_branchs(branch_num, *, node_box,
         add_node_to_box(node_box, primitive)  # 生成10,000个节点大约需要3分钟
         n += 1
 
-        if n % 100 == 0:
-            print(n, end=', ')
-            if n % 2000 == 0:
-                print('')
+        if n % 10 == 0:
+            if n % 200 == 0 or n == branch_num:
+                end = '\n'
+            else:
+                end = ','
+            print(n, end=end)
 
     print('Finish: %s random branches generated.' % n)
 
@@ -237,12 +247,15 @@ def add_random_branchs(branch_num, *, node_box,
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-def generate_tree(node_box):
+def generate_trees(node_box):
     """生成用于迭代的tree： 将node_box数据深拷贝至tree实例中"""
 
     # TODO
     pass
 
+def judge_trees(self):
+    # TODO
+    pass
 
 # ----------------------------------------------------------------------------------------------------------------------
 def evolution_go(tree_box):
@@ -254,24 +267,27 @@ def evolution_go(tree_box):
 
 if __name__ == '__main__':
     pd.set_option('display.max_rows', 8)
-    df = pd.read_csv('data/bitmex_price_1hour_2020q1.csv')
+    # df = pd.read_csv('data/bitmex_price_1hour_2020q1.csv')
+    df = pd.read_csv('private/test_data(2018-2019).csv')
     df['timestamp'] = pd.to_datetime(df.timestamp)
     df.set_index('timestamp', inplace=True)
 
     memory_before = Tools.memory_free()
+    time_before = time.time()
 
-    node_box = generate_leaves(2000, df_source=df)  # inplace node_box
-    node_box = add_first_level_branchs(1000, df_source=df, node_box=node_box)  # not inplace node_box
-    node_box = add_second_level_branch(500, node_box=node_box)  # not inplace node_box
+    node_box = generate_leaves(300, df_source=df)  # inplace node_box
+    node_box = add_first_level_branchs(200, df_source=df, node_box=node_box)  # not inplace node_box
+    node_box = add_second_level_branch(200, node_box=node_box)  # not inplace node_box
     node_box = add_limit_depth_branch(200, node_box=node_box)  # inplace node_box
     node_box = add_random_branchs(100, node_box=node_box)  # inplace node_box
 
     memory_after = Tools.memory_free()
     print('memory consumed: %.6f GB' % (memory_before - memory_after))
+    print('time consumed: %.3f seconds.' % (time.time() - time_before))
 
     # debug
     num = 0
-    while num < 1000:
+    while num < 100:
         instance = random.choice(node_box['pos_value'])
         while isinstance(instance, Terminal):  # or instance.node_data['inter_method'] != Tools.sig_trend_strict:
             instance = random.choice(node_box['pos_value'])
@@ -280,7 +296,7 @@ if __name__ == '__main__':
         result = instance.mutate_primitive(node_box=node_box)
 
         n = 0
-        while n < 1000:
+        while n < 100:
             result = instance.mutate_primitive()
             while not result:
                 result = instance.mutate_primitive()
@@ -293,5 +309,9 @@ if __name__ == '__main__':
         print(num, '$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$')
 
     print('finish.')
+
+    memory_after = Tools.memory_free()
+    print('memory consumed: %.6f GB' % (memory_before - memory_after))
+    print('time consumed: %.3f seconds.' % (time.time() - time_before))
 
     print('\nend ----------------------------------------------------------------------------------------', end='\n\n')
