@@ -230,17 +230,6 @@ class Primitive(Tools):
             #     print(child_lv1_list, child_lv2_list)
             #     return True
 
-    def __update_branch_info(self):
-
-        self.width = len(self.node_data['method_ins'])
-
-        self.population = 1
-        self.depth = 0
-        for instance in self.node_data['method_ins']:
-            self.population += instance.population
-            self.depth = max(self.depth, instance.depth)
-        self.depth += 1  # include self.  
-
     def __mutate_primitive_method(self):
 
         if not random.random() < self.primitive_pbs['refunc_pb']:
@@ -419,16 +408,13 @@ class Primitive(Tools):
         self.__fill_output_type()
 
         # 5. 生成branch属性
-        self.__update_branch_info()
+        self.update_branch_info()
 
         # 5. 向tree、forest报告
         return self.node_data['method_ins']
 
     def get_args(self, strip=True):
         return self.node_data
-
-    def get_node_map():
-        pass
 
     def copy(self):
         """深度复制. tested."""
@@ -453,20 +439,16 @@ class Primitive(Tools):
 
         return new_instance
 
-    def add_score(self, score):
+    def update_branch_info(self):
 
-        self.score_list.append(score)
+        self.width = len(self.node_data['method_ins'])
 
+        self.population = 1
+        self.depth = 0
         for instance in self.node_data['method_ins']:
-            instance.add_score(score)
-
-    def update_score(self, sortino_score):
-
-        self.avg_score = (self.avg_score * self.score_num + sortino_score) / (self.score_num + 1)
-        self.score_num += 1
-
-        for instance in self.node_data['method_ins']:
-            instance.update_score(sortino_score)
+            self.population += instance.population
+            self.depth = max(self.depth, instance.depth)
+        self.depth += 1  # include self.  
 
     def mutate_primitive(self, *, node_box=None, update_node_box=True):
 
@@ -485,11 +467,10 @@ class Primitive(Tools):
             self.lv_mut_tag[3] = True
 
         if self.lv_mut_tag[2] or self.lv_mut_tag[3]:
-            self.__update_branch_info()
+            self.update_branch_info()
             mutation_tag = True
 
         return mutation_tag
-
 
     def recal(self):
 
@@ -519,3 +500,18 @@ class Primitive(Tools):
             self.lv_mut_tag[key] = False  # reset mutation_tag
 
         return self.node_result
+
+    def add_score(self, score):
+
+        self.score_list.append(score)
+
+        for instance in self.node_data['method_ins']:
+            instance.add_score(score)
+
+    def update_score(self, sortino_score):
+
+        self.avg_score = (self.avg_score * self.score_num + sortino_score) / (self.score_num + 1)
+        self.score_num += 1
+
+        for instance in self.node_data['method_ins']:
+            instance.update_score(sortino_score)
