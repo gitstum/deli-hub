@@ -125,6 +125,9 @@ class Indicator(Tools):
     def get_avg_score(self):
         return self.avg_score  # 获取分数统计信息
 
+    def get_args(self):
+        return self.kwargs
+
     @classmethod
     def get_indicator_mutable_dimension_num(cls, arg_range=None):
         """indicator中可变异的参数的维度（根据columns数量决定）。"""
@@ -242,6 +245,13 @@ class Indicator(Tools):
         self.result = result
         return result
 
+    def recal(self, kwargs, *, df_source=None):
+
+        if df_source:
+            self.df_source = df_source  # update
+
+        result = self.cal(**kwargs)
+        return result
 
 # ======================================================================================================================
 
