@@ -37,7 +37,7 @@ class Tree(Tools):
         if deputy_range:
             self.deputy_range = deputy_range
         else:
-            self.deputy_range = {'start': 3, 'end': 11}
+            self.deputy_range = {'start': 3, 'end': 6}
 
         if tree_range:  # TODO: 发挥作用
             self.tree_range = tree_range
@@ -200,21 +200,50 @@ class Tree(Tools):
         if len(other_tag) == 1:  # 针对deputy进行添加与淘汰 （忽略上方的对等问题）
 
             # 在 deputy level 添加交换来的 node
-            print('%s: deputy updating.' % self)
+            print('deputy updating for %s' % self)
             new_deputy = other_node.copy()
             self.node_data['deputy_list'].append(new_deputy)
-            
-            # 如数量太多。。。淘汰分数低的
-            if len(self.node_data['deputy_list']) > self.deputy_range['end']:
 
-                min_score = np.inf
-                pop_deputy = None
-                for deputy in self.node_data['deputy_list']:
-                    if deputy.avg_score < min_score:
-                        min_score = deputy.avg_score
-                        pop_deputy = deputy
+            if len(self.node_data['deputy_list']) > self.deputy_range['end']:   # 如deputy数量太多，淘汰分数低的
 
-                self.node_data['deputy_list'].remove(pop_deputy)
+                instance_list = self.node_data['deputy_list']
+
+                score_list = []
+                for deputy in instance_list:
+                    score = deputy.avg_score
+                    score_list.append(score)
+
+                min_score = min(score_list)
+                min_score_num = score_list.count(min_score)
+
+                if min_score_num == 1:
+                    pop_index = score_list.index(min_score)
+
+                else:  # 如最低分数相同，淘汰权重低的
+
+                    weight_list = []
+                    weight_dict = {}
+                    weight_index = 0
+                    for index, score in zip(range(len(score_list)), score_list):
+                        
+                        if score == min_score:
+                            weight_dict[weight_index] = index
+                            weight = instance_list[index].node_data['weight']
+                            weight_list.append(weight)
+                            weight_index += 1
+
+                    min_weight = min(weight_list)
+                    min_weight_num = weight_list.count(min_weight)
+
+                    if min_weight_num == 1:
+                        pop_index_weight = weight_list.index(min_weight)
+                        pop_index = weight_dict[pop_index_weight]
+
+                    else:  # 如最低权重相同，随机淘汰
+                        pop_index_weight = random.choice(range(len(weight_list)))
+                        pop_index = weight_dict[pop_index_weight]
+
+                self.node_data['deputy_list'].pop(pop_index)
 
         # update data
         self.__update_tree_map()
