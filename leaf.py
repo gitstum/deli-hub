@@ -22,7 +22,7 @@ class Terminal(Tools):
                  node_data=None, lv_mut_tag=None):
 
         # rank --------------------------------------------
-        self.name = self.get_id('terminal')
+        self.name = Tools.get_id('terminal')
         self.score_list = []
         self.score_num = 0
         self.avg_score = 0
@@ -1094,6 +1094,8 @@ class Terminal(Tools):
 
         self.node_data['class_kw'] = {}
         self.node_data['class_kw_ins'] = {}
+        self.node_data['class_kw_ins_class'] = {}
+        self.node_data['class_kw_ins_kwargs'] = {}
         self.node_data['class_kw_range'] = {}
 
         kwarg_list = inspect.getfullargspec(self.node_data['class_func'])[4]
@@ -1127,13 +1129,17 @@ class Terminal(Tools):
 
                 self.node_data['class_kw'][kw] = random.choice(list(range(window_min, window_max)))
                 self.node_data['class_kw_ins'][kw] = None
-                self.node_data['class_kw_range'][kw] = self.node_data[
-                    'feature_window_range']  # 当前window特殊出来。但也在kw_range里面放一下吧。。
+                self.node_data['class_kw_ins_class'][kw] = None
+                self.node_data['class_kw_ins_kwargs'][kw] = None
+                self.node_data['class_kw_range'][kw] = self.node_data['feature_window_range']  # 当前window已特殊放出来。
+
 
             elif kw[:7] == 'feature':
                 instance = indicator(df_source=self.df_source, refeature_pb=refeature_pb_each)  # 创建实例
                 self.node_data['class_kw'][kw] = instance.cal()  # 计算，获得feature
                 self.node_data['class_kw_ins'][kw] = instance
+                self.node_data['class_kw_ins_class'][kw] = indicator
+                self.node_data['class_kw_ins_kwargs'][kw] = instance.get_args()
                 self.node_data['class_kw_range'][kw] = None
 
             else:
@@ -1146,6 +1152,8 @@ class Terminal(Tools):
         self.node_data['feature_num_range'] = classifier_detail['feature_num_range'].copy()
         self.node_data['class_args_features'] = []
         self.node_data['class_args_features_ins'] = []
+        self.node_data['class_args_features_ins_class'] = []
+        self.node_data['class_args_features_ins_kwargs'] = []
 
         start = classifier_detail['feature_num_range']['start']
         sep = classifier_detail['feature_num_range']['sep']
@@ -1165,6 +1173,8 @@ class Terminal(Tools):
         for num in range(feature_num):
             instance = indicator(df_source=self.df_source, refeature_pb=refeature_pb_each)  # 创建实例
             self.node_data['class_args_features_ins'].append(instance)
+            self.node_data['class_args_features_ins_class'].append(indicator)
+            self.node_data['class_args_features_ins_kwargs'].append(instance.get_args())
             self.node_data['class_args_features'].append(instance.cal())
 
     # -------------------------------------------------
@@ -1270,6 +1280,10 @@ class Terminal(Tools):
                         if isinstance(value2, pd.Series):
                             node_data[key][key2] = self.node_data[key][key2].copy()
                             node_data[key][key2] = pd.Series()
+
+                        if isinstance(value2, pd.DataFrame):
+                            node_data[key][key2] = self.node_data[key][key2].copy()
+                            node_data[key][key2] = pd.DataFrame()  # df_source
 
         return node_data
 
@@ -1399,41 +1413,62 @@ class Terminal(Tools):
 
         return mutation_tag
 
-    def recal(self):
+    # def rebuild_feature(self, *, df_source=None):
+
+    #     if not df_source:
+    #         df_source = self.df_source
+
+    #     if func_group == 'cut' or func_group == 'compare':
+
+    #         for kw in self.node_data['class_kw_ins'].keys():
+    #             if kw[:7] == 'feature':
+    #                 self.node_data['class_kw_ins'] = 
+
+    #     elif func_group == 'permutation' or func_group == 'trend':
+
+
+    def recal(self, *, df_source=None, node_data=None):
+
+        if not node_data:
+            node_data = self.node_data
+
+        if not df_source:
+            df_source = self.df_source
 
         self.lv_mut_tag = Classifier.lv_mut_tag.copy()
-        self.cal()
+        self.cal(node_data)
 
-    def cal(self):
+    def cal(self, node_data=None):
 
-        # TODO: test分级计算
+        if not node_data:
+            node_data = self.node_data
 
         if self.lv_mut_tag[7] or self.lv_mut_tag[6] or self.lv_mut_tag[5]:  # lv.7, lv.6, lv.5
 
-            func_group = self.node_data['class_func_group']
+            func_group = node_data['class_func_group']
 
             if func_group == 'cut' or func_group == 'compare':
 
-                func = self.node_data['class_func']
-                args = self.node_data['class_args_edges']
-                kwargs = self.node_data['class_kw']
+                func = node_data['class_func']
+                args = node_data['class_args_edges']
+                kwargs = node_data['class_kw']
                 self.class_data = func(*args, **kwargs)
 
             elif func_group == 'permutation' or func_group == 'trend':
 
-                func = self.node_data['class_func']
-                args = self.node_data['class_args_features']
+                func = node_data['class_func']
+                args = node_data['class_args_features']
                 self.class_data = func(*args)
 
             self.terminal_result = self.__get_mapped_data()
-            self.node_result = Tools.cal_weight(self.terminal_result, self.node_data['weight'])
+            self.node_result = Tools.cal_weight(self.terminal_result, node_data['weight'])
 
         elif self.lv_mut_tag[4]:  # lv.4
             self.terminal_result = self.__get_mapped_data()
-            self.node_result = Tools.cal_weight(self.terminal_result, self.node_data['weight'])
+            self.node_result = Tools.cal_weight(self.terminal_result, node_data['weight'])
 
         elif self.lv_mut_tag[2]:  # lv.2
-            self.node_result = Tools.cal_weight(self.terminal_result, self.node_data['weight'])
+            self.node_result = Tools.cal_weight(self.terminal_result, node_data['weight'])
 
         for key in self.lv_mut_tag.keys():
             self.lv_mut_tag[key] = False  # reset mutation_tag
