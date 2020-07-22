@@ -1,22 +1,22 @@
-#--coding:utf-8--
+# --coding:utf-8--
 import random
 import pandas as pd
-
 
 from tools import Tools
 from leaf import Terminal
 from branch import Primitive
 from constant import *
 from backtest.swap_engine import Judge
+from features.indicators import *
 
 
 class Tree(Tools):
-
     name = 'Tree'
 
-    def __init__(self , *, node_box, tree_method=None, deputy_range=None, tree_range=None, tag_list=None, node_data=None):
+    def __init__(self, *, node_box={}, tree_method=None, deputy_range=None, tree_range=None, tag_list=None,
+                 node_data=None):
 
-        self.name = self.get_id('tree')
+        self.name = Tools.get_id('tree')
         self.now_score = 0
         self.score_list = []
         self.score_num = 0
@@ -37,12 +37,12 @@ class Tree(Tools):
         if deputy_range:
             self.deputy_range = deputy_range
         else:
-            self.deputy_range = {'start': 3, 'end': 6}
+            self.deputy_range = {'start': 3, 'end': 11}
 
-        if tree_range:  # TODO: 发挥作用
+        if tree_range:
             self.tree_range = tree_range
         else:
-            self.tree_range = {'depth': 7, 'population': 52}
+            self.tree_range = {'depth': 7, 'population': 256}
 
         if not tag_list:
             self.tag_list = NODE_TAG_LIST.copy()
@@ -51,11 +51,15 @@ class Tree(Tools):
 
         if node_data:
             self.node_data = node_data.copy()
+            self.__update_tree_map()
+            self.__update_tree_info()
         else:
             self.node_data = dict(tree_method=tree_method,
                                   deputy_list=[],
                                   tree_map={}
                                   )
+
+        self.generate_num = 0
 
     def __update_tree_info(self):
 
@@ -66,7 +70,7 @@ class Tree(Tools):
         for instance in self.node_data['deputy_list']:
             self.population += instance.population
             self.depth = max(self.depth, instance.depth)
-        self.depth += 1 
+        self.depth += 1
 
     def __update_tree_map(self):
 
@@ -85,18 +89,6 @@ class Tree(Tools):
 
         self.node_data['tree_map'] = node_map.copy()
 
-    def __cal(self):
-
-        args = []
-        func = self.node_data['tree_method']
-
-        for instance in self.node_data['deputy_list']:
-            args.append(instance.node_result)
-
-        pos_should = func(*args)
-
-        return pos_should
-
     def __deputy_update(self, node_tag):
         """inplace, update node_result for the line"""
 
@@ -110,30 +102,110 @@ class Tree(Tools):
         mother_node_tag = node_tag[:-1]
         self.__deputy_update(mother_node_tag)
 
+    def __over_populated(self, new_node, *, my_node=None):
+
+        if not self.tree_range['population']:
+            return False
+
+        if my_node:
+            line_population = self.population - my_node.population
+        else:
+            line_population = 0
+        population_delta = new_node.population
+
+        if line_population + population_delta > self.tree_range['population']:
+            return True
+        else:
+            return False
+
+    def __over_deep(self, new_node, *, my_tag=None):
+
+        if not self.tree_range['depth']:
+            return False
+
+        if my_tag:
+            line_depth = len(my_tag)
+        else:
+            line_depth = 1
+        depth_delta = new_node.depth
+
+        if line_depth + depth_delta > self.tree_range['depth']:
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def __strip_type(value):
+
+        if isinstance(value, Indicator):
+            return value.__class__  # 父类继承自Indicator
+        if isinstance(value, Primitive):
+            return Primitive
+        if isinstance(value, Terminal):
+            return Terminal
+        if isinstance(value, pd.Series):
+            return pd.Series
+        if isinstance(value, pd.DataFrame):
+            return pd.DataFrame
+
+        return False
+
+    @staticmethod
+    def __strip_node_data(dict_data):
+        
+        data = dict_data.copy()
+
+        for key, value in data.items():
+
+            value_type = Tree.__strip_type(value)
+            if value_type:
+                data[key] = value_type
+
+            if isinstance(value, list):
+                new_value_list = []
+                for value2 in value:
+                    value_type = Tree.__strip_type(value2)
+                    if value_type:
+                        new_value_list.append(value_type)
+                    else:
+                        if isinstance(value2, dict):
+                            dict_in_list = Tree.__strip_node_data(value2)
+                            new_value_list.append(dict_in_list)
+                        else:
+                            new_value_list.append(value2)
+
+                data[key] = new_value_list
+
+            if isinstance(value, dict):
+                data[key] = Tree.__strip_node_data(value)
+
+        return data
+
+
     @staticmethod
     def get_node_map(node, *, mother_tag=None, tag_list=None):
         """applicable for Primitives."""
-        
+
         node_map = {}
-        
+
         if not tag_list:
             tag_list = NODE_TAG_LIST
-            
+
         now_tag = iter(tag_list)
-        
+
         if isinstance(node, Primitive):
             for instance in node.node_data['method_ins']:
-                
+
                 if mother_tag:
                     instance_tag = mother_tag + now_tag.__next__()
                 else:
                     instance_tag = now_tag.__next__()
                 node_map[instance_tag] = instance
-                
+
                 if isinstance(instance, Primitive):
                     child_node_map = Tree.get_node_map(instance, mother_tag=instance_tag, tag_list=tag_list)
                     node_map.update(child_node_map)
-                
+
         return node_map
 
     # ---------------------------------------------------------------------------------------------------------------
@@ -152,11 +224,24 @@ class Tree(Tools):
         self.__update_tree_map()
         self.__update_tree_info()
 
+        max_depth = self.tree_range['depth']
+        if not max_depth:
+            max_depth = np.inf
+        max_pop = self.tree_range['population']
+        if not max_pop:
+            max_pop = np.inf
+
+        if self.depth > max_depth or self.population > max_pop:
+            self.generate_num += 1
+            if self.generate_num > 100:
+                raise RuntimeError('ERROR: tree_range too small for node_box given. ', self)
+            self.generate_tree()
+
     def get_one_node(self, node_type):
 
         tree_map = self.node_data['tree_map']
         choice_box = list(tree_map.keys())
-        
+
         node_tag = random.choice(choice_box)
         node_instance = tree_map[node_tag]
 
@@ -164,18 +249,53 @@ class Tree(Tools):
 
             while node_instance.node_data['node_type'] != node_type:
                 node_tag = random.choice(choice_box)
-                node_instance = tree_map[node_tag]         
+                node_instance = tree_map[node_tag]
 
         return node_tag, node_instance
 
-    def get_tree_data(self):
+    def get_args(self):
         return self.node_data
 
+    def get_model(self):
+
+        model = self.node_data.copy()
+        model.pop('deputy_list')
+        model['avg_score'] = self.avg_score
+        model['depth'] = self.depth
+        model['population'] = self.population
+
+        tree_map = model['tree_map'].copy()
+        for key, value in tree_map.items():
+
+            tree_map[key] = dict(
+                node_class=model['tree_map'][key].__class__,
+                avg_score=model['tree_map'][key].avg_score, 
+                node_ID=model['tree_map'][key].name,
+            )
+
+            node_data = Tree.__strip_node_data(model['tree_map'][key].node_data)
+            tree_map[key].update(node_data)
+
+        model['tree_map'] = tree_map
+
+        return model
+
     def cross_node(self, other_tag, other_node, *, my_tag=None, my_node=None):
-        
+
         if not my_tag or not my_node:
+
             node_type = other_node.node_data['node_type']
             my_tag, my_node = self.get_one_node(node_type)
+
+            # tree_range 限制  --如果指定了 my_tag, my_node，将不做限制（可能超出限制）
+            num = 0
+            while self.__over_deep(other_node, my_tag=my_tag) or self.__over_populated(other_node, my_node=my_node):
+                my_tag, my_node = self.get_one_node(node_type)
+                num += 1
+                if num > 50:
+                    # raise RuntimeError('ERROR: input other_node too big to fix into current tree. ', self)
+                    print('ERROR: input other_node too big to fix into current tree. ', self)
+                    break
 
         change_map = {my_node: other_node}
         mother_node_tag = my_tag[:-1]
@@ -196,7 +316,7 @@ class Tree(Tools):
             mother_node.node_data['method_ins'] = new_instance_list.copy()
 
             # if len(other_tag) == 1:  # 如cross不对等（deputy vs. branch)， 针对deputy进行添加与淘汰
-        
+
         if len(other_tag) == 1:  # 针对deputy进行添加与淘汰 （忽略上方的对等问题）
 
             # 在 deputy level 添加交换来的 node
@@ -204,7 +324,7 @@ class Tree(Tools):
             new_deputy = other_node.copy()
             self.node_data['deputy_list'].append(new_deputy)
 
-            if len(self.node_data['deputy_list']) > self.deputy_range['end']:   # 如deputy数量太多，淘汰分数低的
+            if len(self.node_data['deputy_list']) > self.deputy_range['end']:  # 如deputy数量太多，淘汰分数低的
 
                 instance_list = self.node_data['deputy_list']
 
@@ -225,7 +345,7 @@ class Tree(Tools):
                     weight_dict = {}
                     weight_index = 0
                     for index, score in zip(range(len(score_list)), score_list):
-                        
+
                         if score == min_score:
                             weight_dict[weight_index] = index
                             weight = instance_list[index].node_data['weight']
@@ -259,7 +379,12 @@ class Tree(Tools):
         mother_node_tag = node_tag[:-1]
 
         if isinstance(node_instance, Primitive):
-            mutation_tag = node_instance.mutate_primitive(node_box=node_box, update_node_box=update_node_box)
+            if self.population < self.tree_range['population']:
+                tree_addable = True
+            else:
+                tree_addable = False
+            mutation_tag = node_instance.mutate_primitive(node_box=node_box, update_node_box=update_node_box,
+                                                          tree_addable=tree_addable)
 
         elif isinstance(node_instance, Terminal):
             mutation_tag = node_instance.mutate_terminal()
@@ -276,26 +401,39 @@ class Tree(Tools):
 
         return mutation_tag
 
-    def judge_tree(self, df_source):
+    def cal(self):
 
-        pos_should = self.__cal()
+        args = []
+        func = self.node_data['tree_method']
 
-        df_book = pd.concat([pos_should, df_source['price_end']])
-        df_book.columns=['pos_should', 'price']
+        for instance in self.node_data['deputy_list']:
+            args.append(instance.node_result)
+
+        self.pos_should = func(*args)
+
+        return self.pos_should
+
+    def judge_tree(self, df_source,
+                   judge_type='kbar', save_file=None, adjust='auto'):
+
+        pos_should = self.cal()
+
+        df_book = pd.concat([pos_should, df_source['price_end']], axis=1)
+        df_book.columns = ['pos_should', 'price']
+        df_book['pos_should'] = df_book['pos_should'] * VOLUME_BASE
         df_book['order_price'] = 0
 
-        # timestamp的处理 - 变为end
-        df_book['time_end'] = df_book.index.copy()
-        # TODO
+        # timestamp的处理 - 变为end  --好像不变也可以。。
+        # df_book['time_end'] = df_book.index.copy()
 
-
-        trade_instance = Judge(name=instance.name, df_book=df_book, df_price=df_source)
+        trade_instance = Judge(name=self.name, df_book=df_book, df_price=df_source,
+                               judge_type=judge_type, save_file=save_file, adjust=adjust)
         trade_scores = trade_instance.judge_start()
         sortino_score = trade_scores['Sortino_ratio']
 
-        instance.update_score(sortino_score)
+        self.update_score(sortino_score)
 
-        return scores
+        return trade_scores
 
     def add_score(self, score):
 
@@ -311,9 +449,3 @@ class Tree(Tools):
 
         for instance in self.node_data['deputy_list']:
             instance.update_score(sortino_score)
-
-
-
-
-
-
