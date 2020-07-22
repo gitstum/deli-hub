@@ -16,11 +16,11 @@ class Primitive(Tools):
     score_num = 0
     avg_score = 0
 
-    def __init__(self, *, node_box, intergrator_map=None, primitive_pbs=None, child_num_range=None,
+    def __init__(self, *, node_box={}, intergrator_map=None, primitive_pbs=None, child_num_range=None,
                  node_data=None, lv_mut_tag=None):
 
         # rank --------------------------------------------
-        self.name = self.get_id('primitive')
+        self.name = Tools.get_id('primitive')
         self.score_list = []
         self.score_num = 0
         self.avg_score = 0
@@ -230,17 +230,6 @@ class Primitive(Tools):
             #     print(child_lv1_list, child_lv2_list)
             #     return True
 
-    def __update_branch_info(self):
-
-        self.width = len(self.node_data['method_ins'])
-
-        self.population = 1
-        self.depth = 0
-        for instance in self.node_data['method_ins']:
-            self.population += instance.population
-            self.depth = max(self.depth, instance.depth)
-        self.depth += 1  # include self.  
-
     def __mutate_primitive_method(self):
 
         if not random.random() < self.primitive_pbs['refunc_pb']:
@@ -288,7 +277,7 @@ class Primitive(Tools):
 
         return True
 
-    def __mutate_primitive_offspring(self, node_box):
+    def __mutate_primitive_offspring(self, node_box, tree_addable):
         """变更子节点"""
 
         mutation_tag = False
@@ -300,7 +289,8 @@ class Primitive(Tools):
         if self.node_data['input_addable']:
 
             poped = self.__mutate_primitive_offspring_pop()  # 剔除
-            added = self.__mutate_primitive_offspring_add(node_box)  # ”新增“
+            if tree_addable:
+                added = self.__mutate_primitive_offspring_add(node_box)  # ”新增“
 
             if poped or added:
                 mutation_tag = True
@@ -319,9 +309,9 @@ class Primitive(Tools):
         node_type = child.node_data['node_type']
         new_child = random.choice(node_box[node_type])
         new_child = new_child.copy()  # ~~
-        change_dict = {child: new_child}
+        change_map = {child: new_child}
 
-        new_instance_list = [change_dict[i] if i in change_dict else i for i in instance_list]
+        new_instance_list = [change_map[i] if i in change_map else i for i in instance_list]
 
         self.node_data['method_ins'] = new_instance_list.copy()
 
@@ -371,15 +361,15 @@ class Primitive(Tools):
                 n = 0
                 while n < (1 / addchild_pb / 2):  # 避免概率太高，死循环
                     new_instance.mutate_primitive(node_box=node_box)
-                    print('re_mutate_primitive counting: %d' % n)
+                    # print('re_mutate_primitive counting: %d' % n)
                     n += 1
                 new_instance.recal()  # note: recal()
 
             elif isinstance(new_instance, Terminal):
                 n = 0
-                while n < 20:
+                while n < 20:  # 10次和20次时间消耗差别不大。。
                     new_instance.mutate_terminal()
-                    print('mutate terminal counting: %d' % n)
+                    # print('mutate terminal counting: %d' % n)
                     n += 1
                 new_instance.recal()  # note: recal()
 
@@ -419,16 +409,13 @@ class Primitive(Tools):
         self.__fill_output_type()
 
         # 5. 生成branch属性
-        self.__update_branch_info()
+        self.update_branch_info()
 
         # 5. 向tree、forest报告
         return self.node_data['method_ins']
 
     def get_args(self, strip=True):
         return self.node_data
-
-    def get_node_map():
-        pass
 
     def copy(self):
         """深度复制. tested."""
@@ -453,6 +440,71 @@ class Primitive(Tools):
 
         return new_instance
 
+    def update_branch_info(self):
+
+        self.width = len(self.node_data['method_ins'])
+
+        self.population = 1
+        self.depth = 0
+        for instance in self.node_data['method_ins']:
+            self.population += instance.population
+            self.depth = max(self.depth, instance.depth)
+        self.depth += 1  # include self.  
+
+    def mutate_primitive(self, *, node_box=None, update_node_box=True, tree_addable=True):
+
+        if node_box:
+            if update_node_box:
+                self.node_box = node_box.copy()
+        else:
+            node_box = self.node_box
+
+        mutation_tag = False
+
+        self.lv_mut_tag[2] = Tools.mutate_weight(self.node_data, reweight_pb=self.primitive_pbs['reweight_pb'])
+
+        self.lv_mut_tag[3] = False
+        if self.__mutate_primitive_method() or self.__mutate_primitive_offspring(node_box, tree_addable):
+            self.lv_mut_tag[3] = True
+
+        if self.lv_mut_tag[2] or self.lv_mut_tag[3]:
+            self.update_branch_info()
+            mutation_tag = True
+
+        return mutation_tag
+
+    def recal(self, node_data=None, *, deep=False):
+
+        self.lv_mut_tag = Integrator.lv_mut_tag
+        self.cal(node_data)
+
+    def cal(self, node_data=None):
+
+        if not node_data:
+            node_data = self.node_data
+
+        if self.lv_mut_tag[3]:  # lv.3
+
+            func = node_data['inter_method']
+            instance_list = node_data['method_ins']
+
+            args = []
+            for instance in instance_list:
+                sig_series = instance.node_result.copy()
+                args.append(sig_series)
+
+            self.primitive_result = func(*args)
+            self.node_result = Tools.cal_weight(self.primitive_result, node_data['weight'])
+
+        elif self.lv_mut_tag[2]:  # lv.2
+
+            self.node_result = Tools.cal_weight(self.primitive_result, node_data['weight'])
+
+        for key in self.lv_mut_tag.keys():
+            self.lv_mut_tag[key] = False  # reset mutation_tag
+
+        return self.node_result
+
     def add_score(self, score):
 
         self.score_list.append(score)
@@ -467,55 +519,3 @@ class Primitive(Tools):
 
         for instance in self.node_data['method_ins']:
             instance.update_score(sortino_score)
-
-    def mutate_primitive(self, node_box=None, update_node_box=True):
-
-        if node_box:
-            if update_node_box:
-                self.node_box = node_box.copy()
-        else:
-            node_box = self.node_box
-
-        mutation_tag = False
-
-        self.lv_mut_tag[2] = Tools.mutate_weight(self.node_data, reweight_pb=self.primitive_pbs['reweight_pb'])
-
-        self.lv_mut_tag[3] = False
-        if self.__mutate_primitive_method() or self.__mutate_primitive_offspring(node_box):
-            self.lv_mut_tag[3] = True
-
-        if self.lv_mut_tag[2] or self.lv_mut_tag[3]:
-            self.__update_branch_info()
-            mutation_tag = True
-
-        return mutation_tag
-
-
-    def recal(self):
-
-        self.lv_mut_tag = Integrator.lv_mut_tag
-        self.cal()
-
-    def cal(self):
-
-        if self.lv_mut_tag[3]:  # lv.3
-
-            func = self.node_data['inter_method']
-            instance_list = self.node_data['method_ins']
-
-            args = []
-            for instance in instance_list:
-                sig_series = instance.node_result.copy()
-                args.append(sig_series)
-
-            self.primitive_result = func(*args)
-            self.node_result = Tools.cal_weight(self.primitive_result, self.node_data['weight'])
-
-        elif self.lv_mut_tag[2]:  # lv.2
-
-            self.node_result = Tools.cal_weight(self.primitive_result, self.node_data['weight'])
-
-        for key in self.lv_mut_tag.keys():
-            self.lv_mut_tag[key] = False  # reset mutation_tag
-
-        return self.node_result

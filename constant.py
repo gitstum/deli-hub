@@ -55,10 +55,10 @@ SLIPPAGE_TICK_MAX = 5000
 OVERLOAD_EDGE = 6000
 
 # How much value initially hold
-CAPITAL = 1000
+CAPITAL = 10000
 
 # How much value for volume base
-VOLUME_BASE = 100
+VOLUME_BASE = 200
 
 # How many period one year has
 ANNUAL_PERIOD = 365 * 24
