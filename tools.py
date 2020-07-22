@@ -643,7 +643,7 @@ class Tools(object):
             else:
                 max_branch_len = max(max_branch_len, len(name))
 
-                # step2: 补充树枝
+        # step2: 补充树枝
         waiting_room = {}
         for room_num in list(range(len(max_branch_len))):
             waiting_room[room_num + 1] = []  # +1 --对应name长度
@@ -2636,11 +2636,14 @@ class Tools(object):
         # close SettingWithCopyWarning
         pd.set_option('mode.chained_assignment', None)
 
-        df_book['timestamp'] = pd.to_datetime(df_book.timestamp)
+        if df_book.index.name == 'timestamp':
+            df_book.reset_index(inplace=True)
+        else:
+            df_book['timestamp'] = pd.to_datetime(df_book.timestamp)  # 测试导入
 
         pos_should_old = np.append(np.array([POS_START]), df_book['pos_should'])
         df_book['pos_should_old'] = pos_should_old[:-1]
-        df_book['trade_sig'] = df_book.pos_should - df_book.pos_should_old
+        df_book['trade_sig'] = df_book.pos_should - df_book.pos_should_old  # 嗯嗯。。。
 
         df_book['order_side'] = Direction.NONE
         df_book['order_side'][df_book.trade_sig > 0] = Direction.LONG  # or 1
@@ -2696,7 +2699,10 @@ class Tools(object):
         @return: np.Array: [line_data, line_index], NOTE that timestamp is converted to int.
         """
 
-        df_price['timestamp'] = pd.to_datetime(df_price.timestamp)
+        if df_price.index.name == 'timestamp':
+            df_price.reset_index(inplace=True)
+        else:
+            df_price['timestamp'] = pd.to_datetime(df_price.timestamp)  # 测试导入
 
         arr_price = np.array([
             df_price.timestamp.values,  # NOTE: auto change to int timestamp!

@@ -11,31 +11,10 @@ import pandas as pd
 import numpy as np
 import empyrical
 
-from backtest.constant import *
+from constant import *
 from tools import Tools
 
-
-class Decision(Tools):
-    """From each strategy outcome to df_book
-    1. Create the big strategy demand DataFrame. Index: timestamp, columns:
-        - strategy_IDs
-        - each strategy demands: pos_should, price(None for marketprice)
-    2. Merge all strategy demands into one df_book.
-    """
-
-
-    def __init__(self, name, structure, data):
-
-        self.name = name
-
-
-
-    def make_decision(self):
-
-        pass
-
-
-
+# TODO: limit order（二维：时间，价格） 与 pos_should （一维：时间） 交易逻辑的矛盾问题。。。
 
 
 class Judge(Tools):
@@ -45,7 +24,7 @@ class Judge(Tools):
     2. performance evaluation
     """
 
-    def __init__(self, name, df_book, df_price,
+    def __init__(self, name, *, df_book, df_price,
                  judge_type='kbar', save_file=None, adjust='auto',
                  exchange='BITMEX', symbol='XBTUSD'):
         """Create judgement object for a strategy.
@@ -91,8 +70,8 @@ class Judge(Tools):
         print('%s | %s | Creating judgement instance: %s.' % (self.str_time(), name, name))
 
         self.name = name
-        self.df_book = df_book
-        self.df_price = df_price
+        self.df_book = df_book.copy()
+        self.df_price = df_price.copy()
         self.judge_type = judge_type
         self.save_file = save_file
         self.adjust = adjust
@@ -141,7 +120,7 @@ class Judge(Tools):
 
         print('%s | %s | Starting evaluation.' % (self.str_time(), self.name))
         self.trading_record.pop('order_ID')  # TODO get_score() overridden
-        print(self.trading_record)
+        # print(self.trading_record)
         result = self.get_score(self.trading_record, self.df_price, annual_period=365*24*60, save_file=self.save_file)
 
         print('%s | %s | Judgement instance ended for %s.' % (self.str_time(), self.name, self.name))
@@ -177,7 +156,7 @@ class Judge(Tools):
             if not self.next_bar():
                 break  # no next bar data. this is not suppose to happen as df_price should be longer than df_book
 
-            while bar_timestamp <= order_timestamp:
+            while bar_timestamp <= order_timestamp:  # 这里<=, 所以order和bar可以采用同一套时间系统
                 # dealing with old limit orders.
                 if self.order_book:
                     self.trade_old()
@@ -186,7 +165,7 @@ class Judge(Tools):
                 bar_timestamp = self.bar_line[0]
 
             # get full bar data
-            price_start = self.bar_line[1]
+            price_start = self.bar_line[1]  # 为了速度快一点，其他bar细节放在了下面这里
             price_end = self.bar_line[2]
             price_max = self.bar_line[3]
             price_min = self.bar_line[4]
@@ -194,7 +173,10 @@ class Judge(Tools):
 
             # dealing with old limit orders.
             if self.order_book:
-                self.trade_old()
+                order_value = self.counteract_old(order_side, order_value)  # rewrite order_value here.
+                if not order_value:
+                    self.trade_old()
+                    continue
 
             # dealing with new orders(limit/market/stop/liquid)
             trade_price, fee_rate = self.trade_kbar(price_start, price_end, price_max, price_min,
@@ -257,6 +239,42 @@ class Judge(Tools):
                 self.trading_record['fee_rate'].append(fee_rate)
 
                 self.order_book.pop(order_ID_old)
+
+    # -----------------------------------------------------------------------------------------------------------------
+
+    def counteract_old(self, new_order_side, new_order_value):
+        """未成交委托抵消函数。思路：不同时挂相反的单子。
+        缺点是：
+        1. 无法顾及一根k线上下都碰到的情况，不利于评估做市类策略。
+        2. 忽略了撤单延迟，行情剧烈波动，导致旧订单成交，新订单却没成交的情况。
+        """
+
+        order_book = self.order_book.copy()  # important.
+
+        for order_ID_old in order_book.keys():
+            order_side_old = self.order_book[order_ID_old]['order_side']
+            order_value_old = self.order_book[order_ID_old]['order_value']
+
+            counteract = False
+            if order_side_old == 0 or order_side_old == Direction.SHORT:
+                if order_side == 1 or order_side == Direction.LONG:
+                    counteract = True
+
+            elif order_side_old == 1 or order_side_old == Direction.LONG:
+                if order_side == 0 or order_side == Direction.SHORT:
+                    counteract = True
+
+            if counteract:
+                order_delta = new_order_value - order_value_old
+                if order_delta < 0:
+                    self.order_book[order_ID_old]['order_value'] = abs(order_delta)
+                    new_order_value = 0
+                    break
+                else:
+                    self.order_book.pop(order_ID_old)
+                    new_order_value = order_delta 
+
+        return new_order_value
 
     # -----------------------------------------------------------------------------------------------------------------
 
