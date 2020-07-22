@@ -16,11 +16,11 @@ class Primitive(Tools):
     score_num = 0
     avg_score = 0
 
-    def __init__(self, *, node_box, intergrator_map=None, primitive_pbs=None, child_num_range=None,
+    def __init__(self, *, node_box={}, intergrator_map=None, primitive_pbs=None, child_num_range=None,
                  node_data=None, lv_mut_tag=None):
 
         # rank --------------------------------------------
-        self.name = self.get_id('primitive')
+        self.name = Tools.get_id('primitive')
         self.score_list = []
         self.score_num = 0
         self.avg_score = 0
@@ -277,7 +277,7 @@ class Primitive(Tools):
 
         return True
 
-    def __mutate_primitive_offspring(self, node_box):
+    def __mutate_primitive_offspring(self, node_box, tree_addable):
         """变更子节点"""
 
         mutation_tag = False
@@ -289,7 +289,8 @@ class Primitive(Tools):
         if self.node_data['input_addable']:
 
             poped = self.__mutate_primitive_offspring_pop()  # 剔除
-            added = self.__mutate_primitive_offspring_add(node_box)  # ”新增“
+            if tree_addable:
+                added = self.__mutate_primitive_offspring_add(node_box)  # ”新增“
 
             if poped or added:
                 mutation_tag = True
@@ -450,7 +451,7 @@ class Primitive(Tools):
             self.depth = max(self.depth, instance.depth)
         self.depth += 1  # include self.  
 
-    def mutate_primitive(self, *, node_box=None, update_node_box=True):
+    def mutate_primitive(self, *, node_box=None, update_node_box=True, tree_addable=True):
 
         if node_box:
             if update_node_box:
@@ -463,7 +464,7 @@ class Primitive(Tools):
         self.lv_mut_tag[2] = Tools.mutate_weight(self.node_data, reweight_pb=self.primitive_pbs['reweight_pb'])
 
         self.lv_mut_tag[3] = False
-        if self.__mutate_primitive_method() or self.__mutate_primitive_offspring(node_box):
+        if self.__mutate_primitive_method() or self.__mutate_primitive_offspring(node_box, tree_addable):
             self.lv_mut_tag[3] = True
 
         if self.lv_mut_tag[2] or self.lv_mut_tag[3]:
@@ -472,17 +473,20 @@ class Primitive(Tools):
 
         return mutation_tag
 
-    def recal(self):
+    def recal(self, node_data=None, *, deep=False):
 
         self.lv_mut_tag = Integrator.lv_mut_tag
-        self.cal()
+        self.cal(node_data)
 
-    def cal(self):
+    def cal(self, node_data=None):
+
+        if not node_data:
+            node_data = self.node_data
 
         if self.lv_mut_tag[3]:  # lv.3
 
-            func = self.node_data['inter_method']
-            instance_list = self.node_data['method_ins']
+            func = node_data['inter_method']
+            instance_list = node_data['method_ins']
 
             args = []
             for instance in instance_list:
@@ -490,11 +494,11 @@ class Primitive(Tools):
                 args.append(sig_series)
 
             self.primitive_result = func(*args)
-            self.node_result = Tools.cal_weight(self.primitive_result, self.node_data['weight'])
+            self.node_result = Tools.cal_weight(self.primitive_result, node_data['weight'])
 
         elif self.lv_mut_tag[2]:  # lv.2
 
-            self.node_result = Tools.cal_weight(self.primitive_result, self.node_data['weight'])
+            self.node_result = Tools.cal_weight(self.primitive_result, node_data['weight'])
 
         for key in self.lv_mut_tag.keys():
             self.lv_mut_tag[key] = False  # reset mutation_tag
