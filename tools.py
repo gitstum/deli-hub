@@ -612,13 +612,7 @@ class Tools(object):
         """计算某个中间节点。在确保下一级别 node_data 已有的情况下使用"""
 
         node = node_map[name]
-
-        # 获取下一个级别的数据
-        child_names = []
-        slice_end = len(name)
-        for k in node_map.keys():  # 这里用到了外围的node_map
-            if k[:slice_end] == name and len(k) == slice_end + 1:
-                child_names.append(k)
+        child_names = Tools.get_child_name_list(name, node_data)
 
         args = []
         for child in child_names:
@@ -627,6 +621,19 @@ class Tools(object):
         # 计算节点数据
         node_function = node['node_function']
         node['node_result'] = node_function(*args) * node['weight']
+
+    # LV.0 ------------------------------------------------------------------------------------------------------------
+    @staticmethod
+    def get_child_name_list(name, node_map):
+        """get children tags. only children, no grandchildren"""
+        
+        child_names = []
+        slice_end = len(name)
+        for k in node_map.keys():  # 这里用到了外围的node_map
+            if k[:slice_end] == name and len(k) == slice_end + 1:
+                child_names.append(k)
+                
+        return sorted(child_names)
 
     # LV.0 ------------------------------------------------------------------------------------------------------------
     @staticmethod
